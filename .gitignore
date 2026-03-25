@@ -1,0 +1,48 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# Model artifacts and datasets
+ai_models/data/
+ai_models/models/
+ai_models/**/*.pt
+ai_models/**/*.pth
+ai_models/**/*.pkl
+
+# Node
+node_modules/
+frontend/node_modules/
+blockchain/node_modules/
+
+# Build outputs
+dist/
+build/
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
