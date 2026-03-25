@@ -1,6 +1,6 @@
 /**
  * frontend/src/services/api.js
- * Centralised API client for the Document Forgery Detection backend.
+ * Centralized API client for the Document Forgery Detection backend.
  */
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
@@ -8,7 +8,18 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
 /**
  * Upload a document file for forgery analysis.
  * @param {File} file
- * @returns {Promise<{result: string, confidence: number, hash: string, cid: string, tx_hash: string|null, module_scores: object}>}
+ * @returns {Promise<{
+ *  result: string,
+ *  confidence: number,
+ *  hash: string,
+ *  cid: string,
+ *  tx_hash: string|null,
+ *  module_scores?: Record<string, number>,
+ *  explanation?: string,
+ *  reasons?: string[],
+ *  suspected_forgery_type?: string,
+ *  forgery_regions?: Array<{x:number,y:number,w:number,h:number,source?:string,score?:number}>
+ * }>} 
  */
 export async function analyzeDocument(file) {
   const formData = new FormData()

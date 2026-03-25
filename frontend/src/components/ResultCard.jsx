@@ -1,21 +1,25 @@
+/**
+ * frontend/src/components/ResultCard.jsx
+ */
+
 const LABEL_CONFIG = {
   Authentic: {
     badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30',
     bar: 'bg-emerald-500',
     glow: 'shadow-emerald-500/20',
-    icon: '✅',
+    icon: 'OK',
   },
   Suspicious: {
     badge: 'bg-amber-500/15 text-amber-400 border border-amber-500/30',
     bar: 'bg-amber-500',
     glow: 'shadow-amber-500/20',
-    icon: '⚠️',
+    icon: 'WARN',
   },
   Forged: {
     badge: 'bg-red-500/15 text-red-400 border border-red-500/30',
     bar: 'bg-red-500',
     glow: 'shadow-red-500/20',
-    icon: '🚫',
+    icon: 'FORGED',
   },
 }
 
@@ -36,9 +40,7 @@ function ScoreBar({ label, score }) {
     <div className="mb-3">
       <div className="flex justify-between text-xs text-white/50 mb-1">
         <span>{label}</span>
-        <span className={score > 0.6 ? 'text-red-400' : score > 0.35 ? 'text-amber-400' : 'text-emerald-400'}>
-          {pct}%
-        </span>
+        <span className={score > 0.6 ? 'text-red-400' : score > 0.35 ? 'text-amber-400' : 'text-emerald-400'}>{pct}%</span>
       </div>
       <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
         <div
@@ -52,7 +54,46 @@ function ScoreBar({ label, score }) {
   )
 }
 
-export default function ResultCard({ result, confidence, hash, cid, tx_hash, module_scores }) {
+function RegionOverlay({ previewUrl, forgery_regions }) {
+  if (!previewUrl || !forgery_regions || forgery_regions.length === 0) return null
+
+  return (
+    <div className="mb-4 pt-4 border-t border-white/8">
+      <p className="text-white/40 text-xs uppercase tracking-widest mb-3">Approximate Forgery Region</p>
+      <div className="relative rounded-xl overflow-hidden border border-red-500/30">
+        <img src={previewUrl} alt="Uploaded document" className="w-full h-auto block" />
+        {forgery_regions.map((r, i) => (
+          <div
+            key={`${r.source || 'region'}-${i}`}
+            className="absolute border-2 border-red-500 bg-red-500/10"
+            style={{
+              left: `${(r.x || 0) * 100}%`,
+              top: `${(r.y || 0) * 100}%`,
+              width: `${(r.w || 0) * 100}%`,
+              height: `${(r.h || 0) * 100}%`,
+            }}
+            title={`${r.source || 'region'} (${Math.round((r.score || 0) * 100)}%)`}
+          />
+        ))}
+      </div>
+      <p className="text-white/50 text-xs mt-2">Red boxes are approximate suspicious areas (not pixel-perfect segmentation).</p>
+    </div>
+  )
+}
+
+export default function ResultCard({
+  result,
+  confidence,
+  hash,
+  cid,
+  tx_hash,
+  module_scores,
+  explanation,
+  reasons,
+  suspected_forgery_type,
+  forgery_regions,
+  previewUrl,
+}) {
   const cfg = LABEL_CONFIG[result] || LABEL_CONFIG.Suspicious
   const pct = (confidence * 100).toFixed(1)
 
@@ -75,11 +116,8 @@ export default function ResultCard({ result, confidence, hash, cid, tx_hash, mod
         }
       `}</style>
 
-      <h2 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
-        📋 Analysis Report
-      </h2>
+      <h2 className="text-lg font-bold text-white mb-5 flex items-center gap-2">Analysis Report</h2>
 
-      {/* Classification row */}
       <div className="flex items-center justify-between mb-4">
         <span className="text-white/50 text-sm">Classification</span>
         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold ${cfg.badge}`}>
@@ -87,20 +125,36 @@ export default function ResultCard({ result, confidence, hash, cid, tx_hash, mod
         </span>
       </div>
 
-      {/* Confidence */}
       <div className="flex items-center justify-between mb-2">
         <span className="text-white/50 text-sm">Overall Confidence</span>
         <span className="text-white font-bold tabular-nums">{pct}%</span>
       </div>
       <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-5">
-        <div
-          className={`h-full rounded-full transition-all duration-700 ${cfg.bar}`}
-          style={{ width: `${pct}%` }}
-        />
+        <div className={`h-full rounded-full transition-all duration-700 ${cfg.bar}`} style={{ width: `${pct}%` }} />
       </div>
 
-      {/* Module scores breakdown */}
-      {module_scores && Object.keys(module_scores).some(k => module_scores[k] != null) && (
+      {(explanation || suspected_forgery_type || (reasons && reasons.length > 0)) && (
+        <div className="mb-4 pt-4 border-t border-white/8">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3">Why This Result</p>
+          {suspected_forgery_type && (
+            <p className="text-sm text-fuchsia-300 mb-2">
+              Suspected forgery type: <span className="font-semibold">{suspected_forgery_type}</span>
+            </p>
+          )}
+          {explanation && <p className="text-sm text-white/70 mb-2">{explanation}</p>}
+          {reasons && reasons.length > 0 && (
+            <ul className="list-disc pl-5 space-y-1 text-sm text-white/70">
+              {reasons.map((reason, idx) => (
+                <li key={idx}>{reason}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <RegionOverlay previewUrl={previewUrl} forgery_regions={forgery_regions} />
+
+      {module_scores && Object.keys(module_scores).some((k) => module_scores[k] != null) && (
         <div className="mb-4 pt-4 border-t border-white/8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3">Module Scores</p>
           {module_scores.ela != null && <ScoreBar label="Error Level Analysis (ELA)" score={module_scores.ela} />}
@@ -109,7 +163,6 @@ export default function ResultCard({ result, confidence, hash, cid, tx_hash, mod
         </div>
       )}
 
-      {/* Hashes */}
       <div className="pt-4 border-t border-white/8">
         <HashRow label="Document SHA-256" value={hash} />
         <HashRow label="IPFS CID" value={cid} />

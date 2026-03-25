@@ -80,6 +80,7 @@ def train_model(
     learning_rate: float,
     num_workers: int,
     pretrained: bool,
+    resume_from_checkpoint: bool = False,
 ) -> dict:
     train_dir = data_root / "train"
     test_dir = data_root / "test"
@@ -120,8 +121,53 @@ def train_model(
 
     best_acc = -1.0
     history: list[dict] = []
+    start_epoch = 1
 
-    for epoch in range(1, epochs + 1):
+    if resume_from_checkpoint and checkpoint_path.exists():
+        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint_backbone = checkpoint.get("backbone", backbone)
+        if checkpoint_backbone != backbone:
+            raise ValueError(
+                f"Checkpoint backbone '{checkpoint_backbone}' does not match requested backbone '{backbone}'."
+            )
+
+        model.load_state_dict(checkpoint["model_state_dict"])
+
+        if "optimizer_state_dict" in checkpoint:
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if "scheduler_state_dict" in checkpoint:
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        best_acc = float(checkpoint.get("best_val_acc", -1.0))
+        history = checkpoint.get("history", [])
+        start_epoch = int(checkpoint.get("epoch", 0)) + 1
+        logger.info(
+            "[%s] Resuming from %s at epoch %d (best_val_acc=%.4f)",
+            model_key,
+            checkpoint_path,
+            start_epoch,
+            best_acc,
+        )
+
+    if start_epoch > epochs:
+        logger.warning(
+            "[%s] Requested epochs=%d is not greater than checkpoint epoch=%d. Nothing to train.",
+            model_key,
+            epochs,
+            start_epoch - 1,
+        )
+        return {
+            "model": model_key,
+            "checkpoint": str(checkpoint_path),
+            "best_val_acc": round(best_acc, 6),
+            "epochs": epochs,
+            "history": history,
+            "resumed": resume_from_checkpoint,
+            "start_epoch": start_epoch,
+            "message": "No training run because checkpoint epoch already reached requested --epochs.",
+        }
+
+    for epoch in range(start_epoch, epochs + 1):
         train_loss, train_acc = _run_epoch(model, train_loader, criterion, device, optimizer)
         val_loss, val_acc = _run_epoch(model, test_loader, criterion, device, optimizer=None)
         scheduler.step()
@@ -152,10 +198,14 @@ def train_model(
             torch.save(
                 {
                     "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": scheduler.state_dict(),
                     "backbone": backbone,
                     "label_to_index": {"authentic": 0, "forged": 1},
                     "best_val_acc": float(best_acc),
                     "model_key": model_key,
+                    "epoch": epoch,
+                    "history": history,
                 },
                 checkpoint_path,
             )
@@ -166,6 +216,8 @@ def train_model(
         "best_val_acc": round(best_acc, 6),
         "epochs": epochs,
         "history": history,
+        "resumed": resume_from_checkpoint,
+        "start_epoch": start_epoch,
     }
 
 
@@ -234,6 +286,7 @@ def main() -> None:
     parser.add_argument("--backbone", choices=["resnet18", "efficientnet_b0"], default="resnet18")
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet weights")
+    parser.add_argument("--resume", action="store_true", help="Resume training from existing checkpoint")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -262,6 +315,7 @@ def main() -> None:
                 learning_rate=args.lr,
                 num_workers=args.num_workers,
                 pretrained=args.pretrained,
+                resume_from_checkpoint=args.resume,
             )
 
         if run_test:

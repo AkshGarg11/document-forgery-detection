@@ -19,7 +19,8 @@ venv/
 .venv/
 
 # Model artifacts and datasets
-ai_models/data/
+ai_models/data_forgery_type/
+ai_models/data_binary/
 ai_models/models/
 ai_models/**/*.pt
 ai_models/**/*.pth

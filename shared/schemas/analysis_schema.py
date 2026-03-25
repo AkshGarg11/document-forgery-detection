@@ -3,8 +3,8 @@ shared/schemas/analysis_schema.py
 Shared Pydantic models used across backend + any future microservices.
 """
 
-from pydantic import BaseModel, Field
 from typing import Optional
+from pydantic import BaseModel, Field
 
 
 class AnalysisRequest(BaseModel):
@@ -14,10 +14,19 @@ class AnalysisRequest(BaseModel):
 
 
 class ModuleScores(BaseModel):
-    """Individual AI module scores (0.0–1.0 forgery probability)."""
+    """Individual AI module scores (0.0-1.0 forgery probability)."""
     ela: Optional[float] = None
     copy_move: Optional[float] = None
     nlp: Optional[float] = None
+
+
+class ForgeryRegion(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+    source: Optional[str] = None
+    score: Optional[float] = None
 
 
 class AnalysisResponse(BaseModel):
@@ -28,3 +37,10 @@ class AnalysisResponse(BaseModel):
     cid: str = Field(..., description="IPFS Content Identifier.")
     tx_hash: Optional[str] = Field(None, description="Blockchain transaction hash.")
     module_scores: Optional[ModuleScores] = None
+    explanation: Optional[str] = Field(None, description="Human-readable explanation of the verdict.")
+    reasons: Optional[list[str]] = Field(None, description="Evidence points from each analysis module.")
+    suspected_forgery_type: Optional[str] = Field(
+        None,
+        description="Most likely forgery subtype, e.g., Copy-Move, Splicing/Composite Edit, Textual Forgery.",
+    )
+    forgery_regions: Optional[list[ForgeryRegion]] = None

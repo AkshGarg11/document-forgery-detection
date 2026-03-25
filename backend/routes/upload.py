@@ -16,25 +16,30 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+class ForgeryRegion(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+    source: str | None = None
+    score: float | None = None
+
+
 class AnalysisResult(BaseModel):
-    result: str          # "Authentic" | "Suspicious" | "Forged"
-    confidence: float    # 0.0 – 1.0
-    hash: str            # SHA-256 of the file
-    cid: str             # IPFS Content Identifier
-    tx_hash: str | None = None  # Blockchain transaction hash (optional)
+    result: str
+    confidence: float
+    hash: str
+    cid: str
+    tx_hash: str | None = None
+    module_scores: dict[str, float] | None = None
+    explanation: str | None = None
+    reasons: list[str] | None = None
+    suspected_forgery_type: str | None = None
+    forgery_regions: list[ForgeryRegion] | None = None
 
 
 @router.post("/upload", response_model=AnalysisResult, summary="Upload a document for forgery analysis")
 async def upload_document(file: UploadFile = File(...)):
-    """
-    Pipeline:
-    1. Read & hash file content
-    2. Run AI forgery analysis
-    3. Upload document to IPFS
-    4. Record result on blockchain
-    5. Return consolidated result
-    """
-    # --- Safety checks ---
     allowed_types = {"image/jpeg", "image/png", "application/pdf"}
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -48,19 +53,15 @@ async def upload_document(file: UploadFile = File(...)):
         logger.error("Failed to read uploaded file: %s", exc)
         raise HTTPException(status_code=500, detail="Could not read uploaded file.") from exc
 
-    # Step 1 — Hash
     doc_hash = compute_hash(content)
     logger.info("Document hash: %s", doc_hash)
 
-    # Step 2 — AI analysis
     ai_result = analyze_document(content, file.content_type)
     logger.info("AI result: %s (confidence=%.2f)", ai_result["result"], ai_result["confidence"])
 
-    # Step 3 — IPFS upload
     cid = upload_to_ipfs(content)
     logger.info("IPFS CID: %s", cid)
 
-    # Step 4 — Blockchain record
     tx_hash = store_on_blockchain(doc_hash, cid, ai_result["result"])
     logger.info("Blockchain tx: %s", tx_hash)
 
@@ -70,4 +71,9 @@ async def upload_document(file: UploadFile = File(...)):
         hash=doc_hash,
         cid=cid,
         tx_hash=tx_hash,
+        module_scores=ai_result.get("module_scores"),
+        explanation=ai_result.get("explanation"),
+        reasons=ai_result.get("reasons"),
+        suspected_forgery_type=ai_result.get("suspected_forgery_type"),
+        forgery_regions=ai_result.get("forgery_regions"),
     )
