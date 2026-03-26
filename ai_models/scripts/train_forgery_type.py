@@ -3,14 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import io
+from collections import Counter
 from pathlib import Path
 
 import torch
 from PIL import Image
+from sklearn.metrics import f1_score
 from torch import nn
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.utils.data import DataLoader, Dataset
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
 
 from ai_models.image.cnn_pipeline import build_backbone, resolve_device
@@ -19,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 IMAGE_SIZE = 224
 SUPPORTED_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+
+
+class JpegCompression:
+    def __init__(self, quality: int = 92) -> None:
+        self.quality = quality
+
+    def __call__(self, img: Image.Image) -> Image.Image:
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=self.quality)
+        out.seek(0)
+        return Image.open(out).convert("RGB")
 
 
 class ForgeryTypeDataset(Dataset):
@@ -41,11 +55,15 @@ class ForgeryTypeDataset(Dataset):
         if augment:
             self.transform = transforms.Compose(
                 [
+                    JpegCompression(quality=92),
                     transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
+                    transforms.RandomResizedCrop(IMAGE_SIZE, scale=(0.85, 1.0), ratio=(0.9, 1.1)),
                     transforms.RandomHorizontalFlip(0.5),
-                    transforms.RandomRotation(6),
+                    transforms.RandomRotation(7),
+                    transforms.ColorJitter(brightness=0.08, contrast=0.08, saturation=0.06, hue=0.02),
                     transforms.ToTensor(),
                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                    transforms.RandomErasing(p=0.25, scale=(0.02, 0.1), ratio=(0.3, 3.3), value="random"),
                 ]
             )
         else:
@@ -85,34 +103,67 @@ def discover_nonempty_classes(root: Path) -> list[str]:
     return classes
 
 
-def run_epoch(model, loader, criterion, device, optimizer=None):
+def run_epoch(model, loader, criterion, device, optimizer=None, phase: str = "train", epoch: int = 0, total_epochs: int = 0):
     is_train = optimizer is not None
     model.train(is_train)
 
     total_loss = 0.0
     total_correct = 0
     total = 0
+    y_true: list[int] = []
+    y_pred: list[int] = []
+    total_batches = len(loader)
+    dataset_size = len(loader.dataset)
+    use_amp = torch.cuda.is_available()
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
 
-    for x, y in loader:
+    logger.info(
+        "[forgery_type][%s] epoch %d/%d starting: %d images, %d batches",
+        phase,
+        epoch,
+        total_epochs,
+        dataset_size,
+        total_batches,
+    )
+
+    for batch_idx, (x, y) in enumerate(loader, start=1):
         x = x.to(device)
         y = y.to(device)
 
         if is_train:
             optimizer.zero_grad(set_to_none=True)
 
-        logits = model(x)
-        loss = criterion(logits, y)
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            logits = model(x)
+            loss = criterion(logits, y)
 
         if is_train:
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
         pred = torch.argmax(logits, dim=1)
         total_correct += int((pred == y).sum().item())
         total_loss += float(loss.item()) * y.size(0)
         total += int(y.size(0))
+        y_true.extend(y.detach().cpu().tolist())
+        y_pred.extend(pred.detach().cpu().tolist())
 
-    return total_loss / max(total, 1), total_correct / max(total, 1)
+        pct = (100.0 * total / max(dataset_size, 1))
+        logger.info(
+            "[forgery_type][%s] epoch %d/%d batch %d/%d images %d/%d (%.1f%%)",
+            phase,
+            epoch,
+            total_epochs,
+            batch_idx,
+            total_batches,
+            total,
+            dataset_size,
+            pct,
+        )
+
+    macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0) if y_true else 0.0
+    return total_loss / max(total, 1), total_correct / max(total, 1), float(macro_f1)
 
 
 def train_forgery_type_model(
@@ -131,18 +182,31 @@ def train_forgery_type_model(
     train_ds = ForgeryTypeDataset(data_root / "train", classes, augment=True)
     test_ds = ForgeryTypeDataset(data_root / "test", classes, augment=False)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    train_labels = [label for _, label in train_ds.samples]
+    class_counts = Counter(train_labels)
+    sample_weights = [1.0 / class_counts[label] for label in train_labels]
+    sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
+
+    train_loader = DataLoader(train_ds, batch_size=batch_size, sampler=sampler, num_workers=num_workers)
     test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers)
 
     device = resolve_device()
     model = build_backbone(backbone, num_classes=len(classes), pretrained=pretrained).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    class_weight_tensor = torch.tensor(
+        [1.0 / class_counts.get(i, 1) for i in range(len(classes))], dtype=torch.float32, device=device
+    )
+    class_weight_tensor = class_weight_tensor / class_weight_tensor.sum() * len(classes)
+
+    criterion = nn.CrossEntropyLoss(weight=class_weight_tensor, label_smoothing=0.05)
     optimizer = AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-    scheduler = CosineAnnealingLR(optimizer, T_max=max(epochs, 1))
+    scheduler = ReduceLROnPlateau(optimizer, mode="max", factor=0.5, patience=2)
 
     start_epoch = 1
     best_acc = -1.0
+    best_f1 = -1.0
+    stale_epochs = 0
+    early_stop_patience = 6
     history: list[dict] = []
 
     if resume_from_checkpoint and checkpoint_path.exists():
@@ -157,8 +221,11 @@ def train_forgery_type_model(
             scheduler.load_state_dict(ckpt["scheduler_state_dict"])
         start_epoch = int(ckpt.get("epoch", 0)) + 1
         best_acc = float(ckpt.get("best_val_acc", -1.0))
+        best_f1 = float(ckpt.get("best_val_f1", -1.0))
         history = ckpt.get("history", [])
         logger.info("[forgery_type] Resuming from epoch %d", start_epoch)
+    elif resume_from_checkpoint:
+        logger.info("[forgery_type] No checkpoint found, starting from epoch 1")
 
     if start_epoch > epochs:
         return {
@@ -172,31 +239,56 @@ def train_forgery_type_model(
         }
 
     for epoch in range(start_epoch, epochs + 1):
-        tr_loss, tr_acc = run_epoch(model, train_loader, criterion, device, optimizer)
-        va_loss, va_acc = run_epoch(model, test_loader, criterion, device)
-        scheduler.step()
+        logger.info("[forgery_type] Progress: epoch %d/%d", epoch, epochs)
+        tr_loss, tr_acc, tr_f1 = run_epoch(
+            model,
+            train_loader,
+            criterion,
+            device,
+            optimizer,
+            phase="train",
+            epoch=epoch,
+            total_epochs=epochs,
+        )
+        va_loss, va_acc, va_f1 = run_epoch(
+            model,
+            test_loader,
+            criterion,
+            device,
+            phase="val",
+            epoch=epoch,
+            total_epochs=epochs,
+        )
+        scheduler.step(va_f1)
 
         row = {
             "epoch": epoch,
             "train_loss": round(tr_loss, 6),
             "train_acc": round(tr_acc, 6),
+            "train_f1_macro": round(tr_f1, 6),
             "val_loss": round(va_loss, 6),
             "val_acc": round(va_acc, 6),
+            "val_f1_macro": round(va_f1, 6),
         }
         history.append(row)
 
         logger.info(
-            "[forgery_type] epoch %d/%d train_loss=%.4f train_acc=%.4f val_loss=%.4f val_acc=%.4f",
+            "[forgery_type] epoch %d/%d train_loss=%.4f train_acc=%.4f train_f1=%.4f val_loss=%.4f val_acc=%.4f val_f1=%.4f",
             epoch,
             epochs,
             tr_loss,
             tr_acc,
+            tr_f1,
             va_loss,
             va_acc,
+            va_f1,
         )
 
-        if va_acc > best_acc:
+        improved = va_f1 > best_f1
+        if improved:
             best_acc = va_acc
+            best_f1 = va_f1
+            stale_epochs = 0
             checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
             torch.save(
                 {
@@ -207,15 +299,24 @@ def train_forgery_type_model(
                     "backbone": backbone,
                     "class_names": classes,
                     "best_val_acc": float(best_acc),
+                    "best_val_f1": float(best_f1),
                     "history": history,
                 },
                 checkpoint_path,
             )
+        else:
+            stale_epochs += 1
+            logger.info("[forgery_type] No val_f1 improvement for %d epoch(s)", stale_epochs)
+
+        if stale_epochs >= early_stop_patience:
+            logger.info("[forgery_type] Early stopping triggered at epoch %d", epoch)
+            break
 
     return {
         "checkpoint": str(checkpoint_path),
         "classes": classes,
         "best_val_acc": round(best_acc, 6),
+        "best_val_f1": round(best_f1, 6),
         "epochs": epochs,
         "resumed": resume_from_checkpoint,
         "start_epoch": start_epoch,
@@ -230,8 +331,6 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--backbone", choices=["resnet18", "efficientnet_b0"], default="resnet18")
     parser.add_argument("--num-workers", type=int, default=0)
-    parser.add_argument("--pretrained", action="store_true")
-    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--checkpoint", default="ai_models/models/forgery_type_cnn.pt")
     args = parser.parse_args()
 
@@ -245,8 +344,8 @@ def main() -> None:
         learning_rate=args.lr,
         backbone=args.backbone,
         num_workers=args.num_workers,
-        pretrained=args.pretrained,
-        resume_from_checkpoint=args.resume,
+        pretrained=True,
+        resume_from_checkpoint=Path(args.checkpoint).exists(),
     )
     print(json.dumps(result, indent=2))
 

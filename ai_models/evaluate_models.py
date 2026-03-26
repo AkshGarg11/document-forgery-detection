@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,7 @@ from ai_models.image.ela import run_ela_analysis
 from ai_models.image.forgery_type import predict_forgery_type
 
 SUPPORTED_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+logger = logging.getLogger(__name__)
 
 
 def _iter_images(root: Path):
@@ -37,20 +39,30 @@ def evaluate_binary_from_type_root(type_root: Path, threshold: float = 0.5) -> d
     y_true: list[int] = []
     y_prob: list[float] = []
 
+    all_items: list[tuple[Path, int]] = []
     for cls_dir in sorted(test_root.iterdir()):
         if not cls_dir.is_dir():
             continue
         label = 0 if cls_dir.name == "authentic" else 1
         for p in _iter_images(cls_dir):
-            content = p.read_bytes()
-            ela_p = float(run_ela_analysis(content))
-            cm_p = float(run_copy_move_detection(content))
-            fused = float(0.6 * ela_p + 0.4 * cm_p)
-            y_true.append(label)
-            y_prob.append(fused)
+            all_items.append((p, label))
 
-    if not y_true:
+    total_images = len(all_items)
+    if total_images == 0:
         raise ValueError("No test images found for binary evaluation.")
+
+    logger.info("[eval][binary] Starting evaluation for %d images", total_images)
+
+    for idx, (p, label) in enumerate(all_items, start=1):
+        content = p.read_bytes()
+        ela_p = float(run_ela_analysis(content))
+        cm_p = float(run_copy_move_detection(content))
+        fused = float(0.6 * ela_p + 0.4 * cm_p)
+        y_true.append(label)
+        y_prob.append(fused)
+
+        if idx == 1 or idx % 25 == 0 or idx == total_images:
+            logger.info("[eval][binary] Checked %d/%d images", idx, total_images)
 
     y_true_arr = np.array(y_true)
     y_prob_arr = np.array(y_prob)
@@ -87,16 +99,31 @@ def evaluate_forgery_type(type_root: Path) -> dict:
     y_true: list[str] = []
     y_pred: list[str] = []
 
+    all_items: list[tuple[Path, str]] = []
     for cls_dir in sorted(test_root.iterdir()):
         if not cls_dir.is_dir() or cls_dir.name == "authentic":
             continue
         cls_name = cls_dir.name
         for p in _iter_images(cls_dir):
-            pred, conf = predict_forgery_type(p.read_bytes())
-            if pred is None:
-                continue
+            all_items.append((p, cls_name))
+
+    total_images = len(all_items)
+    if total_images == 0:
+        return {
+            "samples": 0,
+            "message": "No subtype predictions available. Train forgery type model first.",
+        }
+
+    logger.info("[eval][type] Starting evaluation for %d forged images", total_images)
+
+    for idx, (p, cls_name) in enumerate(all_items, start=1):
+        pred, _ = predict_forgery_type(p.read_bytes())
+        if pred is not None:
             y_true.append(cls_name)
             y_pred.append(pred)
+
+        if idx == 1 or idx % 25 == 0 or idx == total_images:
+            logger.info("[eval][type] Checked %d/%d images", idx, total_images)
 
     if not y_true:
         return {
@@ -130,6 +157,8 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=0.5, help="Binary decision threshold")
     parser.add_argument("--out", default=None, help="Optional output JSON path")
     args = parser.parse_args()
+
+    logging.basicConfig(level=logging.INFO)
 
     root = Path(args.data_root)
 
