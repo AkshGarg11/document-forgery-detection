@@ -3,22 +3,22 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
 from sklearn.metrics import (
     accuracy_score,
-    balanced_accuracy_score,
     classification_report,
     confusion_matrix,
     f1_score,
     precision_score,
     recall_score,
-    roc_auc_score,
 )
 
 from ai_models.image.copy_move import run_copy_move_detection
 from ai_models.image.ela import run_ela_analysis
+from ai_models.image.forgery_type import CHECKPOINT_PATH as TYPE_CHECKPOINT_PATH
 from ai_models.image.forgery_type import predict_forgery_type
 
 SUPPORTED_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
@@ -31,128 +31,105 @@ def _iter_images(root: Path):
             yield p
 
 
-def evaluate_binary_from_type_root(type_root: Path, threshold: float = 0.5) -> dict:
+def _count_split_classes(type_root: Path) -> dict[str, dict[str, int]]:
+    class_names = ["authentic", "copy_move", "splicing"]
+    out: dict[str, dict[str, int]] = {}
+    for split in ("train", "test"):
+        split_root = type_root / split
+        split_counts = {c: 0 for c in class_names}
+        if split_root.exists():
+            for c in class_names:
+                cls_dir = split_root / c
+                split_counts[c] = sum(1 for _ in _iter_images(cls_dir)) if cls_dir.exists() else 0
+        out[split] = split_counts
+    return out
+
+
+def evaluate_three_class_cascade(type_root: Path, threshold: float = 0.5) -> dict:
     test_root = type_root / "test"
     if not test_root.exists():
         raise FileNotFoundError(f"Missing test dir: {test_root}")
 
-    y_true: list[int] = []
-    y_prob: list[float] = []
-
-    all_items: list[tuple[Path, int]] = []
-    for cls_dir in sorted(test_root.iterdir()):
-        if not cls_dir.is_dir():
-            continue
-        label = 0 if cls_dir.name == "authentic" else 1
-        for p in _iter_images(cls_dir):
-            all_items.append((p, label))
-
-    total_images = len(all_items)
-    if total_images == 0:
-        raise ValueError("No test images found for binary evaluation.")
-
-    logger.info("[eval][binary] Starting evaluation for %d images", total_images)
-
-    for idx, (p, label) in enumerate(all_items, start=1):
-        content = p.read_bytes()
-        ela_p = float(run_ela_analysis(content))
-        cm_p = float(run_copy_move_detection(content))
-        fused = float(0.6 * ela_p + 0.4 * cm_p)
-        y_true.append(label)
-        y_prob.append(fused)
-
-        if idx == 1 or idx % 25 == 0 or idx == total_images:
-            logger.info("[eval][binary] Checked %d/%d images", idx, total_images)
-
-    y_true_arr = np.array(y_true)
-    y_prob_arr = np.array(y_prob)
-    y_pred_arr = (y_prob_arr >= threshold).astype(int)
-
-    return {
-        "samples": int(len(y_true_arr)),
-        "threshold": float(threshold),
-        "accuracy": float(accuracy_score(y_true_arr, y_pred_arr)),
-        "balanced_accuracy": float(balanced_accuracy_score(y_true_arr, y_pred_arr)),
-        "precision_binary": float(precision_score(y_true_arr, y_pred_arr, zero_division=0)),
-        "recall_binary": float(recall_score(y_true_arr, y_pred_arr, zero_division=0)),
-        "f1_binary": float(f1_score(y_true_arr, y_pred_arr, zero_division=0)),
-        "precision_macro": float(precision_score(y_true_arr, y_pred_arr, average="macro", zero_division=0)),
-        "recall_macro": float(recall_score(y_true_arr, y_pred_arr, average="macro", zero_division=0)),
-        "f1_macro": float(f1_score(y_true_arr, y_pred_arr, average="macro", zero_division=0)),
-        "roc_auc": float(roc_auc_score(y_true_arr, y_prob_arr)),
-        "confusion_matrix": confusion_matrix(y_true_arr, y_pred_arr).tolist(),
-        "classification_report": classification_report(
-            y_true_arr,
-            y_pred_arr,
-            target_names=["authentic", "forged"],
-            zero_division=0,
-            output_dict=True,
-        ),
-    }
-
-
-def evaluate_forgery_type(type_root: Path) -> dict:
-    test_root = type_root / "test"
-    if not test_root.exists():
-        raise FileNotFoundError(f"Missing test dir: {test_root}")
-
-    y_true: list[str] = []
-    y_pred: list[str] = []
+    class_names = ["authentic", "copy_move", "splicing"]
+    allowed_forgery = {"copy_move", "splicing"}
 
     all_items: list[tuple[Path, str]] = []
     for cls_dir in sorted(test_root.iterdir()):
-        if not cls_dir.is_dir() or cls_dir.name == "authentic":
+        if not cls_dir.is_dir():
             continue
-        cls_name = cls_dir.name
+        if cls_dir.name not in class_names:
+            continue
         for p in _iter_images(cls_dir):
-            all_items.append((p, cls_name))
+            all_items.append((p, cls_dir.name))
 
     total_images = len(all_items)
     if total_images == 0:
-        return {
-            "samples": 0,
-            "message": "No subtype predictions available. Train forgery type model first.",
-        }
+        raise ValueError("No test images found for 3-class evaluation.")
 
-    logger.info("[eval][type] Starting evaluation for %d forged images", total_images)
+    logger.info("[eval][cascade] Starting 3-class cascade evaluation for %d images", total_images)
 
-    for idx, (p, cls_name) in enumerate(all_items, start=1):
-        pred, _ = predict_forgery_type(p.read_bytes())
-        if pred is not None:
-            y_true.append(cls_name)
-            y_pred.append(pred)
+    y_true: list[str] = []
+    y_pred: list[str] = []
+    split_counts = Counter()
+
+    for idx, (p, true_label) in enumerate(all_items, start=1):
+        content = p.read_bytes()
+
+        split_counts[true_label] += 1
+
+        # Stage 1: binary gate authentic vs forged
+        ela_p = float(run_ela_analysis(content))
+        cm_p = float(run_copy_move_detection(content))
+        fused = float(0.6 * ela_p + 0.4 * cm_p)
+
+        pred_label = "authentic"
+        if fused >= threshold:
+            # Stage 2: subtype only for binary-predicted forged images
+            subtype_pred, _ = predict_forgery_type(content)
+            if subtype_pred in allowed_forgery:
+                pred_label = subtype_pred
+            else:
+                pred_label = "splicing"
+
+        y_true.append(true_label)
+        y_pred.append(pred_label)
 
         if idx == 1 or idx % 25 == 0 or idx == total_images:
-            logger.info("[eval][type] Checked %d/%d images", idx, total_images)
+            logger.info("[eval][cascade] Checked %d/%d images", idx, total_images)
 
-    if not y_true:
-        return {
-            "samples": 0,
-            "message": "No subtype predictions available. Train forgery type model first.",
-        }
+    cm = confusion_matrix(y_true, y_pred, labels=class_names)
 
-    labels = sorted(set(y_true) | set(y_pred))
+    out_dir = Path("ai_models/models")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cm_png = out_dir / "confusion_matrix_cascade.png"
+
+    split_counts = _count_split_classes(type_root)
 
     return {
         "samples": int(len(y_true)),
-        "labels": labels,
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "precision_macro": float(precision_score(y_true, y_pred, average="macro", zero_division=0)),
         "recall_macro": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
         "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
-        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=labels).tolist(),
+        "confusion_matrix": cm.tolist(),
         "classification_report": classification_report(
             y_true,
             y_pred,
-            labels=labels,
+            labels=class_names,
             zero_division=0,
             output_dict=True,
         ),
+        "class_names": class_names,
+        "confusion_matrix_png": str(cm_png),
+        "checkpoint": str(TYPE_CHECKPOINT_PATH),
+        "history_png": str(out_dir / "train_val_curves.png"),
+        "threshold": float(threshold),
+        "split_counts": split_counts,
     }
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate binary + forgery-type performance")
+    parser = argparse.ArgumentParser(description="Evaluate 3-class cascaded forgery performance")
     parser.add_argument("--data-root", default="ai_models/data_forgery_type", help="Subtype dataset root")
     parser.add_argument("--threshold", type=float, default=0.5, help="Binary decision threshold")
     parser.add_argument("--out", default=None, help="Optional output JSON path")
@@ -162,17 +139,7 @@ def main() -> None:
 
     root = Path(args.data_root)
 
-    binary_metrics = evaluate_binary_from_type_root(root, threshold=args.threshold)
-    type_metrics = evaluate_forgery_type(root)
-
-    result = {
-        "binary_evaluation": binary_metrics,
-        "forgery_type_evaluation": type_metrics,
-        "summary": {
-            "binary_accuracy": binary_metrics.get("accuracy"),
-            "forgery_type_accuracy": type_metrics.get("accuracy"),
-        },
-    }
+    result = evaluate_three_class_cascade(root, threshold=args.threshold)
 
     print(json.dumps(result, indent=2))
 

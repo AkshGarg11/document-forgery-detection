@@ -21,11 +21,11 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate for forgery-type model")
     parser.add_argument(
         "--forgery-type-backbone",
-        choices=["resnet18", "efficientnet_b0"],
-        default="resnet18",
+        choices=["dual_resnet50_srm"],
+        default="dual_resnet50_srm",
         help="Backbone for forgery-type CNN",
     )
-    parser.add_argument("--num-workers", type=int, default=0, help="DataLoader workers")
+    parser.add_argument("--num-workers", type=int, default=4, help="DataLoader workers")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -40,7 +40,7 @@ def main() -> None:
     logger.info("Starting forgery-type training pipeline.")
     logger.info("Checkpoint path: %s", forgery_type_ckpt)
     logger.info("Requested total epochs: %d", args.epochs)
-    logger.info("Training always resumes from checkpoint when available.")
+    logger.info("Training resumes from checkpoint when compatible; otherwise starts fresh.")
 
     results: dict[str, object] = {
         "forgery_type_data_root": str(forgery_type_data_root),
