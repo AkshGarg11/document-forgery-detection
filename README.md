@@ -1,6 +1,6 @@
 # Document Forgery Detection System
 
-Docker-first setup for document forgery detection with blockchain verification.
+Docker-first setup for document forgery detection.
 
 ## Prerequisites
 
@@ -41,14 +41,13 @@ When you run `docker compose up`, these containers start:
 
 Ports defined in `.env.example` for related infrastructure:
 
-- Blockchain RPC: `8545` (from `WEB3_PROVIDER_URI`)
 - IPFS API: `5001` (from `IPFS_API_URL`)
 
 Important:
 
 - Current `docker-compose.yml` starts backend + frontend only.
-- Blockchain and IPFS are referenced endpoints but are not started as compose services in the current setup.
-- Backend currently supports mocked blockchain/IPFS flow for local development.
+- IPFS is referenced as an endpoint but is not started as a compose service in the current setup.
+- Backend currently supports mocked IPFS flow for local development.
 
 ## AI Model Training and Evaluation
 
@@ -145,3 +144,79 @@ This removes containers, images, networks, and volumes created by this project.
 - Backend image installs both backend and AI dependencies.
 - Frontend uses multi-stage Docker build (Node build + Nginx runtime).
 - Healthcheck is enabled for backend and frontend depends on backend health.
+
+## Blockchain Workflow (Ganache App + Hardhat + Backend)
+
+This repository now includes a blockchain module in [blockchain](blockchain) and backend integration for:
+
+- Issue (anchor) document hash on-chain during upload
+- Verify hash via API
+- Revoke hash via API
+
+### 1) Start Ganache App
+
+1. Open Ganache App.
+2. Start a local workspace.
+3. Ensure RPC URL is available (default is usually `http://127.0.0.1:7545`).
+4. Ensure `Chain ID` is `5777` in Ganache settings.
+
+### 2) Compile and test contract
+
+From [blockchain](blockchain):
+
+```bash
+npm install
+npm test
+```
+
+### 3) Deploy contract
+
+Deployment via `hardhat viem` may require wallet methods not exposed by some Ganache App configurations.
+Use this reliable Web3 deployment from repo root:
+
+```bash
+python blockchain/scripts/deploy_with_web3.py
+```
+
+Copy the printed contract address.
+
+### 4) Configure environment
+
+Set these in [.env](.env):
+
+- `BLOCKCHAIN_ENABLED=true`
+- `GANACHE_RPC_URL=http://127.0.0.1:7545`
+- `WEB3_PROVIDER_URI=http://127.0.0.1:7545`
+- `CHAIN_ID=5777`
+- `CONTRACT_ADDRESS=<deployed_address>`
+
+`DEPLOYER_PRIVATE_KEY` is optional for Ganache App if unlocked accounts are available.
+
+### 5) Backend API behavior
+
+- Upload endpoint [backend/routes/upload.py](backend/routes/upload.py):
+  - computes file hash
+  - runs AI pipeline
+  - uploads to IPFS mock
+  - attempts on-chain issue and returns:
+    - `tx_hash`
+    - `anchor_status`
+    - `anchor_error` (only on failure)
+
+- Verify endpoint [backend/routes/verify.py](backend/routes/verify.py):
+  - `POST /api/v1/verify`
+  - body: `{ "file_hash": "<64 hex>" }`
+
+- Revoke endpoint [backend/routes/revoke.py](backend/routes/revoke.py):
+  - `POST /api/v1/revoke`
+  - body: `{ "file_hash": "<64 hex>" }`
+
+### 6) Frontend behavior
+
+[frontend/src/components/ResultCard.jsx](frontend/src/components/ResultCard.jsx) now shows:
+
+- document hash
+- IPFS CID
+- anchor status
+- blockchain transaction hash
+- anchor error (if any)

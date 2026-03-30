@@ -35,7 +35,9 @@ class AnalysisResponse(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
     hash: str = Field(..., description="SHA-256 of the submitted document.")
     cid: str = Field(..., description="IPFS Content Identifier.")
-    tx_hash: Optional[str] = Field(None, description="Blockchain transaction hash.")
+    tx_hash: Optional[str] = Field(None, description="Blockchain transaction hash for anchor operation.")
+    anchor_status: Optional[str] = Field(None, description="anchored | anchor_failed | not_anchored")
+    anchor_error: Optional[str] = Field(None, description="Anchor error details when chain write fails.")
     module_scores: Optional[ModuleScores] = None
     explanation: Optional[str] = Field(None, description="Human-readable explanation of the verdict.")
     reasons: Optional[list[str]] = Field(None, description="Evidence points from each analysis module.")

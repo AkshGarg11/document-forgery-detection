@@ -29,7 +29,6 @@ ai_models/**/*.pkl
 # Node
 node_modules/
 frontend/node_modules/
-blockchain/node_modules/
 
 # Build outputs
 dist/

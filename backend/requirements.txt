@@ -3,6 +3,8 @@ uvicorn[standard]==0.29.0
 python-multipart==0.0.9
 pydantic==2.7.1
 python-dotenv==1.0.1
-# web3==6.15.1          # Uncomment when connecting to a real blockchain node
+web3==6.15.1
+PyMuPDF==1.24.4
+Pillow==10.3.0
 # ipfshttpclient==0.8.0a2  # Uncomment for real IPFS integration
 # requests==2.31.0      # For Pinata / HTTP-based IPFS

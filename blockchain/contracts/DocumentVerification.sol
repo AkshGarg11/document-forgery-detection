@@ -1,116 +1,92 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.28;
 
-/**
- * @title DocumentVerification
- * @notice Stores tamper-proof document verification records on-chain.
- * @dev Each document is keyed by its SHA-256 hash. Records are immutable once written.
- */
 contract DocumentVerification {
-
-    // ── Structs ──────────────────────────────────────────────────────────────
-
-    struct VerificationRecord {
-        string  documentHash;   // SHA-256 hex string of the original document
-        string  ipfsCid;        // IPFS Content Identifier of the stored document
-        string  result;         // "Authentic" | "Suspicious" | "Forged"
-        uint256 timestamp;      // Block timestamp of submission
-        address submitter;      // Address that submitted the verification
+    struct DocumentRecord {
+        address issuer;
+        uint256 timestamp;
+        bytes32 textHash;
+        bool exists;
+        bool revoked;
     }
 
-    // ── State ─────────────────────────────────────────────────────────────────
+    mapping(bytes32 => DocumentRecord) private documents;
+    mapping(address => bool) public authorizedIssuers;
+    address public owner;
 
-    /// Mapping from document hash → verification record
-    mapping(string => VerificationRecord) private records;
+    event IssuerUpdated(address indexed issuer, bool authorized);
+    event DocumentIssued(bytes32 indexed fileHash, bytes32 indexed textHash, address indexed issuer, uint256 timestamp);
+    event DocumentRevoked(bytes32 indexed fileHash, address indexed issuer, uint256 timestamp);
 
-    /// Ordered list of submitted document hashes (for enumeration)
-    string[] private documentHashes;
-
-    // ── Events ────────────────────────────────────────────────────────────────
-
-    event DocumentVerified(
-        string  indexed documentHash,
-        string  ipfsCid,
-        string  result,
-        uint256 timestamp,
-        address indexed submitter
-    );
-
-    // ── Errors ────────────────────────────────────────────────────────────────
-
-    error AlreadyVerified(string documentHash);
-    error InvalidHash();
-    error InvalidResult();
-
-    // ── Modifiers ─────────────────────────────────────────────────────────────
-
-    modifier onlyValidResult(string memory result) {
-        bytes32 r = keccak256(abi.encodePacked(result));
-        require(
-            r == keccak256("Authentic") ||
-            r == keccak256("Suspicious") ||
-            r == keccak256("Forged"),
-            "Invalid result value"
-        );
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner");
         _;
     }
 
-    // ── Write Functions ───────────────────────────────────────────────────────
+    modifier onlyAuthorizedIssuer() {
+        require(authorizedIssuers[msg.sender], "Not an authorized issuer");
+        _;
+    }
 
-    /**
-     * @notice Store a new verification record for a document.
-     * @param documentHash  SHA-256 hash of the document (hex string, 64 chars).
-     * @param ipfsCid       IPFS CID where the document is stored.
-     * @param result        Classification: "Authentic", "Suspicious", or "Forged".
-     */
-    function storeVerification(
-        string calldata documentHash,
-        string calldata ipfsCid,
-        string calldata result
-    ) external onlyValidResult(result) {
-        if (bytes(documentHash).length != 64) revert InvalidHash();
-        if (bytes(records[documentHash].documentHash).length != 0) {
-            revert AlreadyVerified(documentHash);
-        }
+    constructor() {
+        owner = msg.sender;
+        authorizedIssuers[msg.sender] = true;
+        emit IssuerUpdated(msg.sender, true);
+    }
 
-        records[documentHash] = VerificationRecord({
-            documentHash: documentHash,
-            ipfsCid:      ipfsCid,
-            result:       result,
-            timestamp:    block.timestamp,
-            submitter:    msg.sender
+    function setIssuer(address issuer, bool isAuthorized) external onlyOwner {
+        require(issuer != address(0), "Invalid issuer");
+        authorizedIssuers[issuer] = isAuthorized;
+        emit IssuerUpdated(issuer, isAuthorized);
+    }
+
+    function issueDocument(bytes32 fileHash, bytes32 textHash) external onlyAuthorizedIssuer {
+        require(fileHash != bytes32(0), "Invalid file hash");
+        require(textHash != bytes32(0), "Invalid text hash");
+        require(!documents[fileHash].exists, "Document already issued");
+
+        documents[fileHash] = DocumentRecord({
+            issuer: msg.sender,
+            timestamp: block.timestamp,
+            textHash: textHash,
+            exists: true,
+            revoked: false
         });
 
-        documentHashes.push(documentHash);
-
-        emit DocumentVerified(documentHash, ipfsCid, result, block.timestamp, msg.sender);
+        emit DocumentIssued(fileHash, textHash, msg.sender, block.timestamp);
     }
 
-    // ── Read Functions ────────────────────────────────────────────────────────
-
-    /**
-     * @notice Retrieve the verification record for a given document hash.
-     * @param documentHash SHA-256 hash of the document.
-     */
-    function getVerification(string calldata documentHash)
+    function verifyDocument(bytes32 fileHash)
         external
         view
-        returns (VerificationRecord memory)
+        returns (bool isValid, uint256 timestamp, address issuer, bool revoked)
     {
-        return records[documentHash];
+        DocumentRecord memory record = documents[fileHash];
+        if (!record.exists) {
+            return (false, 0, address(0), false);
+        }
+        if (record.revoked) {
+            return (false, record.timestamp, record.issuer, true);
+        }
+        return (true, record.timestamp, record.issuer, false);
     }
 
-    /**
-     * @notice Check whether a document has already been verified.
-     */
-    function isVerified(string calldata documentHash) external view returns (bool) {
-        return bytes(records[documentHash].documentHash).length != 0;
+    function revokeDocument(bytes32 fileHash) external onlyAuthorizedIssuer {
+        DocumentRecord storage record = documents[fileHash];
+        require(record.exists, "Document does not exist");
+        require(record.issuer == msg.sender, "Only original issuer can revoke");
+        require(!record.revoked, "Document already revoked");
+
+        record.revoked = true;
+        emit DocumentRevoked(fileHash, msg.sender, block.timestamp);
     }
 
-    /**
-     * @notice Return total number of verified documents.
-     */
-    function totalVerified() external view returns (uint256) {
-        return documentHashes.length;
+    function getDocument(bytes32 fileHash)
+        external
+        view
+        returns (address issuer, uint256 timestamp, bytes32 textHash, bool exists, bool revoked)
+    {
+        DocumentRecord memory record = documents[fileHash];
+        return (record.issuer, record.timestamp, record.textHash, record.exists, record.revoked);
     }
 }
