@@ -9,15 +9,18 @@ Successfully implemented **Digital Notary System** with **High-Precision Forensi
 ## What Was Built
 
 ### Phase 1: Forensic Verdict Generation ✅
+
 **Goal**: Combine blockchain proof + AI confidence into human-readable forensic verdicts
 
 **Deliverables:**
+
 - Smart contract v2 with version tracking & metadata fields
 - Backend forensic verdict engine (blockchain + AI fusion)
 - Frontend forensic verdict display with chain status badges
 - Support for "Save" (anchor) and "Find" (verify) modes
 
 **Key Features:**
+
 - Exact match detection (SHA-256 on-chain)
 - Revocation status tracking
 - AI confidence integration
@@ -25,9 +28,11 @@ Successfully implemented **Digital Notary System** with **High-Precision Forensi
 - Confidence scoring (0.0-1.0) for verdicts
 
 ### Phase 2: Perceptual Hashing & Similarity Matching ✅
+
 **Goal**: Detect re-forgeries by catching visually similar documents even with different SHA-256 hashes
 
 **Deliverables:**
+
 - Perceptual hash (pHash) computation for images
 - Hamming distance similarity scoring
 - On-chain storage of pHash alongside SHA-256
@@ -35,6 +40,7 @@ Successfully implemented **Digital Notary System** with **High-Precision Forensi
 - Similarity score returned in find mode responses
 
 **Key Features:**
+
 - Average hash algorithm (64-bit fingerprint)
 - Robust to minor edits (crop, recolor, compression)
 - 0-100% similarity score
@@ -46,6 +52,7 @@ Successfully implemented **Digital Notary System** with **High-Precision Forensi
 ## Files Modified/Created
 
 ### Backend Changes
+
 ```
 backend/
 ├── routes/upload.py ........................... Enhanced forensic logic
@@ -64,6 +71,7 @@ blockchain/
 ```
 
 ### Frontend Changes
+
 ```
 frontend/src/
 ├── components/ResultCard.jsx ................. Forensic verdict display
@@ -72,6 +80,7 @@ frontend/src/
 ```
 
 ### Documentation
+
 ```
 PHASE_IMPLEMENTATION_SUMMARY.md ............... Comprehensive technical guide
 TESTING_GUIDE.md .............................. Step-by-step test procedures
@@ -82,6 +91,7 @@ TESTING_GUIDE.md .............................. Step-by-step test procedures
 ## Technical Architecture
 
 ### Data Storage (Smart Contract)
+
 ```solidity
 struct DocumentRecord {
   address issuer;              // Who anchored it
@@ -96,6 +106,7 @@ struct DocumentRecord {
 ```
 
 ### Response Schema (AnalysisResult)
+
 ```typescript
 {
   // AI Analysis Results
@@ -106,12 +117,12 @@ struct DocumentRecord {
   reasons: string[]
   suspected_forgery_type: string
   forgery_regions: [{x, y, w, h, source, score}]
-  
+
   // Hashing
   hash: string                    // SHA-256
   cid: string                     // IPFS CID
   perceptual_hash: string         // 64-char pHash
-  
+
   // Blockchain Proof
   tx_hash: string                 // Transaction on Ganache
   anchor_status: string           // "anchored", "found_on_chain", etc
@@ -119,7 +130,7 @@ struct DocumentRecord {
   chain_revoked: boolean
   chain_timestamp: number
   chain_issuer: address
-  
+
   // Forensic Verdict
   forensic_verdict: string        // Human-readable reconciliation
   forensic_confidence: 0.0-1.0    // Combined verdict confidence
@@ -156,25 +167,27 @@ struct DocumentRecord {
 
 ## Key Improvements
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| **Detection Accuracy** | Basic hash matching | Blockchain + AI + perceptual | 3x higher precision |
-| **Re-Forgery Detection** | ❌ Not possible | ✅ Via >95% similarity | NEW capability |
-| **False Positive Rate** | High (AI alone) | Low (blockchain + AI) | ~70% reduction |
-| **Forensic Information** | Minimal | Rich metadata + verdict | Comprehensive |
-| **User Confidence** | Unclear | Clear verdicts (1.0 scale) | Interpretable |
+| Metric                   | Before              | After                        | Improvement         |
+| ------------------------ | ------------------- | ---------------------------- | ------------------- |
+| **Detection Accuracy**   | Basic hash matching | Blockchain + AI + perceptual | 3x higher precision |
+| **Re-Forgery Detection** | ❌ Not possible     | ✅ Via >95% similarity       | NEW capability      |
+| **False Positive Rate**  | High (AI alone)     | Low (blockchain + AI)        | ~70% reduction      |
+| **Forensic Information** | Minimal             | Rich metadata + verdict      | Comprehensive       |
+| **User Confidence**      | Unclear             | Clear verdicts (1.0 scale)   | Interpretable       |
 
 ---
 
 ## Smart Contract Deployment
 
 **Current Deployment:**
+
 - Address: `0x0FdF754207659C47F9b10239Df3d3c6DEB47F571`
 - Network: Ganache (1337)
 - RPC: http://127.0.0.1:7545
 - Status: ✅ Active & Tested
 
 **Contract Features:**
+
 - ✅ Version tracking
 - ✅ Chain-of-custody linking
 - ✅ Perceptual hash storage
@@ -186,33 +199,37 @@ struct DocumentRecord {
 ## API Endpoints
 
 ### POST /upload (Save Mode)
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/upload \
   -F "file=@document.jpg" \
   -F "blockchain_action=save"
 ```
+
 **Returns**: AnalysisResult with forensic_verdict="Proof of Existence Recorded"
 
 ### POST /upload (Find Mode)
+
 ```bash
 curl -X POST http://localhost:8000/api/v1/upload \
   -F "file=@document.jpg" \
   -F "blockchain_action=find"
 ```
+
 **Returns**: AnalysisResult with blockchain verification + similarity matching
 
 ---
 
 ## Testing Status
 
-| Test Case | Phase | Status | Notes |
-|-----------|-------|--------|-------|
-| 1.1 Save Anchor | P1 | Ready | Tests forensic verdict on save |
-| 1.2 Find Exact | P1 | Ready | Tests exact match authentication |
-| 1.3 Find + AI | P1 | Ready | Tests AI integration |
-| 2.1 pHash Storage | P2 | Ready | Verifies 64-char hash |
-| 2.2 Re-Forgery | P2 | Ready | Tests >95% similarity detection |
-| 2.3 Unrelated | P2 | Ready | Tests <95% filtering |
+| Test Case         | Phase | Status | Notes                            |
+| ----------------- | ----- | ------ | -------------------------------- |
+| 1.1 Save Anchor   | P1    | Ready  | Tests forensic verdict on save   |
+| 1.2 Find Exact    | P1    | Ready  | Tests exact match authentication |
+| 1.3 Find + AI     | P1    | Ready  | Tests AI integration             |
+| 2.1 pHash Storage | P2    | Ready  | Verifies 64-char hash            |
+| 2.2 Re-Forgery    | P2    | Ready  | Tests >95% similarity detection  |
+| 2.3 Unrelated     | P2    | Ready  | Tests <95% filtering             |
 
 **See TESTING_GUIDE.md for detailed procedures**
 
@@ -221,20 +238,24 @@ curl -X POST http://localhost:8000/api/v1/upload \
 ## Dependencies Installed
 
 ### AI Models
+
 - ✅ `imagehash>=4.3.1` (new)
 - ✓ All existing dependencies unchanged
 
 ### Backend
+
 - ✓ web3==6.15.1
 - ✓ fastapi, pydantic
 - ✓ dotenv
 
 ### Frontend
+
 - ✓ React 18+
 - ✓ Tailwind CSS
 - ✓ Vite
 
 ### Blockchain
+
 - ✓ Ganache (running on 7545)
 - ✓ Solidity 0.8.28
 
@@ -243,6 +264,7 @@ curl -X POST http://localhost:8000/api/v1/upload \
 ## Configuration
 
 **Environment (.env)**
+
 ```ini
 # Blockchain
 BLOCKCHAIN_ENABLED=true
@@ -275,12 +297,14 @@ IPFS_API_URL=http://localhost:5001
 ## Security Considerations
 
 ✅ **Implemented:**
+
 - Blockchain immutability (hash anchored on-chain)
 - Revocation mechanism (can mark documents as revoked)
 - Chain-of-custody tracking (version linking)
 - Input validation (JPEG/PNG/PDF only)
 
 ⏳ **Planned (Phase 3):**
+
 - Digital signatures (MetaMask integration)
 - Role-based access control
 - Audit logging on-chain
@@ -300,17 +324,20 @@ IPFS_API_URL=http://localhost:5001
 ## Next Steps (Phase 3+)
 
 ### Immediate (Phase 3)
+
 - [ ] Digital signature verification via MetaMask wallet
 - [ ] Signature validation on-chain
 - [ ] User authentication (wallet-based)
 
 ### Short-term (Phase 3+)
+
 - [ ] Forensic report PDF generation
 - [ ] Version history visualization UI
 - [ ] Document comparison tool (side-by-side)
 - [ ] Batch upload processing
 
 ### Medium-term (Phase 4+)
+
 - [ ] Production blockchain deployment (Polygon/Ethereum)
 - [ ] IPFS pinning service integration (Pinata)
 - [ ] Machine learning model updates (continuous retraining)
@@ -323,6 +350,7 @@ IPFS_API_URL=http://localhost:5001
 **Phase 1 & 2 Objective**: Implement high-precision forensic detection combining blockchain + AI + visual similarity
 
 **Achieved:**
+
 - ✅ Forensic verdict generation combining 3 evidence sources
 - ✅ Smart contract successfully handles version tracking + perceptual hash
 - ✅ Frontend displays verdicts with confidence scores
@@ -331,6 +359,7 @@ IPFS_API_URL=http://localhost:5001
 - ✅ Comprehensive documentation & testing guide
 
 **Quality Metrics:**
+
 - Code coverage: All new functions have input validation
 - Error handling: Try-catch blocks on all blockchain operations
 - Documentation: Technical guide + testing procedures
@@ -356,11 +385,12 @@ IPFS_API_URL=http://localhost:5001
 ## Quick Reference
 
 **Start Development:**
+
 ```bash
 # Terminal 1: Backend
 cd backend && uvicorn main:app --reload
 
-# Terminal 2: Frontend  
+# Terminal 2: Frontend
 cd frontend && npm run dev
 
 # Terminal 3: Ganache (if using CLI)
@@ -371,12 +401,14 @@ tail -f backend/app.log
 ```
 
 **Test Save + Find Workflow:**
+
 1. Upload image with "Save on Blockchain" → stores SHA-256 + pHash
 2. Upload same image with "Find on Blockchain" → verifies on-chain
 3. Upload cropped version with "Find on Blockchain" → detects >95% similarity
 4. Check frontend displays forensic verdict + confidence
 
 **Verify Smart Contract:**
+
 ```bash
 cd blockchain
 python scripts/deploy_with_web3.py  # Test deployment
@@ -388,16 +420,17 @@ python scripts/deploy_with_web3.py  # Test deployment
 ## Conclusion
 
 **Phase 1 & 2 successfully delivers:**
+
 - Digital Notary system with blockchain-anchored documents
-- High-precision forensic verdicts combining blockchain + AI + perceptual matching  
+- High-precision forensic verdicts combining blockchain + AI + perceptual matching
 - Re-forgery detection capability
 - Production-ready code with comprehensive testing guide
 
 **System is ready for:**
+
 - ✅ Local testing (Ganache)
 - ✅ Integration testing (frontend + backend)
 - ✅ Phase 3 development (digital signatures)
 - ⏳ Production deployment (with contract upgrades)
 
 See **TESTING_GUIDE.md** for step-by-step verification procedures.
-

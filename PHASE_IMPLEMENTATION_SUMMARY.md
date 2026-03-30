@@ -1,6 +1,7 @@
 # Digital Notary & High-Precision Forensic Detection Implementation
 
 ## Overview
+
 Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of the "Digital Notary" system upgrade.
 
 ---
@@ -8,7 +9,9 @@ Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of t
 ## Phase 1: Forensic Verdict Generation ✅ COMPLETE
 
 ### Smart Contract Enhancements (v2 - DEPLOYED)
+
 **File**: `blockchain/contracts/DocumentVerification.sol`
+
 - **New Fields**:
   - `versionNumber`: Track document versions
   - `previousHash`: Chain-of-custody linking
@@ -29,6 +32,7 @@ Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of t
 ### Backend Services
 
 #### blockchain_service.py
+
 - **New Utility Functions**:
   - `_hamming_distance(hash1, hash2) → int`: Compute Hamming distance between two 64-char hex strings
   - `_similarity_score(hash1, hash2) → float`: Calculate 0-100% similarity score
@@ -38,18 +42,21 @@ Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of t
   - `verify_document()`: Returns expanded dict with perceptual hash: `{"perceptual_hash": str, ...}`
 
 #### ai_service.py
+
 - **Perceptual Hash Computation**:
   - Imports `compute_perceptual_hash` from `image.cnn_pipeline`
   - Computes pHash for all image uploads
   - Returns `perceptual_hash` in analysis result dict
 
 #### image/cnn_pipeline.py
+
 - **New Function**: `compute_perceptual_hash(content: bytes) → str`
   - Uses `imagehash` library (average hash method)
   - Returns 64-character hex string visual fingerprint
-  - Falls back to "0"*64 on errors (invalid images)
+  - Falls back to "0"\*64 on errors (invalid images)
 
 ### Upload.py - Forensic Verdict Engine
+
 **File**: `backend/routes/upload.py`
 
 - **Enhanced AnalysisResult Schema**:
@@ -97,6 +104,7 @@ Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of t
 ### Frontend - Forensic Display
 
 #### ResultCard.jsx Updates
+
 - **New Component**: `ChainStatusBadge`
   - Displays chain status with color coding (green/red/amber)
   - Shows issuer address (6-char prefix), timestamp, revocation status
@@ -114,12 +122,15 @@ Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of t
 ## Phase 2: Perceptual Hashing & Similarity Matching ✅ COMPLETE
 
 ### Requirements Update
+
 **File**: `ai_models/requirements.txt`
+
 - Added: `imagehash>=4.3.1`
 
 ### Perceptual Hash Computation Pipeline
 
 #### compute_perceptual_hash() Function
+
 **Location**: `ai_models/image/cnn_pipeline.py`
 
 - **Algorithm**: Average Hashing (aHash)
@@ -134,13 +145,14 @@ Completed Phase 1 (Forensic Verdict Logic) and Phase 2 (Perceptual Hashing) of t
 ### Similarity Matching Implementation
 
 #### Hamming Distance Calculation
+
 **Location**: `backend/services/blockchain_service.py`
 
 ```python
 _hamming_distance(hash1, hash2) → int
   - Computes XOR of two 64-bit perceptual hashes
   - Returns: Number of differing bits (0-64)
-  
+
 _similarity_score(hash1, hash2) → float
   - Transforms distance to 0-100% score
   - Formula: (64 - distance) / 64 * 100
@@ -149,6 +161,7 @@ _similarity_score(hash1, hash2) → float
 ```
 
 #### Blockchain Storage
+
 - Per-document perceptual hash stored on-chain
 - Enables forensic comparison across versions
 - Supports detecting:
@@ -157,6 +170,7 @@ _similarity_score(hash1, hash2) → float
   - Reused forgery templates
 
 #### Upload Pipeline Integration
+
 1. **Save Mode**:
    - Computes pHash during analysis
    - Stores SHA-256 + pHash on-chain
@@ -194,6 +208,7 @@ Upload 2 (Modified Forged Image - cropped + recolored):
 ## Architecture Summary
 
 ### Data Flow: Save Mode
+
 ```
 User Upload
     ↓
@@ -215,6 +230,7 @@ Response:
 ```
 
 ### Data Flow: Find Mode
+
 ```
 User Upload
     ↓
@@ -227,7 +243,7 @@ Blockchain Lookup:
      ├─ Found + Valid → "Authentic (Found on-chain)"
      ├─ Found + Revoked → "Revoked on-chain (Tampering)"
      └─ NOT Found → Next step
-  
+
   2. Perceptual Hash Similarity Check
      ├─ >95% match → "Possible Re-Forgery"
      └─ <95% OR no pHash → Use AI confidence
@@ -248,19 +264,20 @@ Response:
 
 ## Key Improvements Over Phase 0
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| **Verification** | Simple: Hash found? Yes/No | **High Precision**: Exact match + Perceptual similarity + AI confidence |
-| **Re-Forgery Detection** | ❌ Not possible | ✅ Detects via >95% perceptual similarity |
-| **Metadata** | None | Version chain, issuer, timestamp, perceptual hash |
-| **Forensic Verdict** | Basic result | Human-readable reconciliation with confidence |
-| **Finding Scenarios** | Miss modified forged docs | **Catch sophisticated re-forgeries** |
+| Aspect                   | Before                     | After                                                                   |
+| ------------------------ | -------------------------- | ----------------------------------------------------------------------- |
+| **Verification**         | Simple: Hash found? Yes/No | **High Precision**: Exact match + Perceptual similarity + AI confidence |
+| **Re-Forgery Detection** | ❌ Not possible            | ✅ Detects via >95% perceptual similarity                               |
+| **Metadata**             | None                       | Version chain, issuer, timestamp, perceptual hash                       |
+| **Forensic Verdict**     | Basic result               | Human-readable reconciliation with confidence                           |
+| **Finding Scenarios**    | Miss modified forged docs  | **Catch sophisticated re-forgeries**                                    |
 
 ---
 
 ## Testing Recommendations
 
 ### Test Case 1: Save Workflow
+
 ```
 1. Upload original image
    - Verify: forensic_verdict = "Proof of Existence Recorded"
@@ -270,6 +287,7 @@ Response:
 ```
 
 ### Test Case 2: Find - Exact Match
+
 ```
 1. Use same file from Test Case 1
    - Verify: forensic_verdict = "Authentic (Found on-chain)"
@@ -278,6 +296,7 @@ Response:
 ```
 
 ### Test Case 3: Find - Perceptual Similarity (Re-Forgery)
+
 ```
 1. Crop/recolor image from Test Case 1
 2. Upload modified version
@@ -289,6 +308,7 @@ Response:
 ```
 
 ### Test Case 4: Find - Completely Different
+
 ```
 1. Upload new unrelated image
    - Verify: forensic_verdict uses AI confidence
@@ -299,19 +319,23 @@ Response:
 ---
 
 ## Dependencies Installed
+
 - ✅ `imagehash>=4.3.1` (perceptual hashing)
 - ✓ All other dependencies unchanged
 
 ## Environment Variables Updated
+
 - ✅ `CONTRACT_ADDRESS=0x0FdF754207659C47F9b10239Df3d3c6DEB47F571` (new deployment)
 
 ## Remaining Phases
+
 - **Phase 3**: Digital signature verification (MetaMask integration)
 - **Phase 3+**: Forensic report template generation, version history UI
 
 ---
 
 ## Deployment Checklist
+
 - [x] Smart contract recompiled & deployed
 - [x] Solidity updated with perceptual hash (string field)
 - [x] Backend blockchain_service updated

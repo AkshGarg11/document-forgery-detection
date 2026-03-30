@@ -109,22 +109,44 @@ function RegionOverlay({ previewUrl, forgery_regions }) {
 
 function ChainStatusBadge({ status, issuer, timestamp, revoked }) {
   const statusConfig = {
-    anchored: { color: 'emerald', label: '✓ Saved', detail: 'Proof recorded' },
-    found_on_chain: { color: 'emerald', label: '✓ Found', detail: 'Hash verified' },
-    not_found_on_chain: { color: 'red', label: '✗ Not Found', detail: 'Not on-chain' },
-    revoked_on_chain: { color: 'red', label: '⊘ Revoked', detail: 'Marked revoked' },
-    anchor_failed: { color: 'amber', label: '⚠ Failed', detail: 'Anchor error' },
-    lookup_failed: { color: 'amber', label: '⚠ Error', detail: 'Lookup failed' },
+    anchored: { color: "emerald", label: "✓ Saved", detail: "Proof recorded" },
+    found_on_chain: {
+      color: "emerald",
+      label: "✓ Found",
+      detail: "Hash verified",
+    },
+    not_found_on_chain: {
+      color: "red",
+      label: "✗ Not Found",
+      detail: "Not on-chain",
+    },
+    revoked_on_chain: {
+      color: "red",
+      label: "⊘ Revoked",
+      detail: "Marked revoked",
+    },
+    anchor_failed: {
+      color: "amber",
+      label: "⚠ Failed",
+      detail: "Anchor error",
+    },
+    lookup_failed: {
+      color: "amber",
+      label: "⚠ Error",
+      detail: "Lookup failed",
+    },
   };
   const cfg = statusConfig[status] || statusConfig.anchor_failed;
   const colorMap = {
-    emerald: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
-    red: 'text-red-400 bg-red-500/15 border-red-500/30',
-    amber: 'text-amber-400 bg-amber-500/15 border-amber-500/30',
+    emerald: "text-emerald-400 bg-emerald-500/15 border-emerald-500/30",
+    red: "text-red-400 bg-red-500/15 border-red-500/30",
+    amber: "text-amber-400 bg-amber-500/15 border-amber-500/30",
   };
-  const tsStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : '';
+  const tsStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : "";
   return (
-    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${colorMap[cfg.color]}`}>
+    <div
+      className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${colorMap[cfg.color]}`}
+    >
       <span>{cfg.label}</span>
       {revoked && <span className="text-xs">🚫</span>}
       <div className="text-white/40 text-xs ml-1">
@@ -193,24 +215,36 @@ export default function ResultCard({
 
       <div className="flex items-center justify-between mb-2">
         <span className="text-white/50 text-sm">Forensic Confidence</span>
-        <span className="text-white font-bold tabular-nums">{(forensic_confidence != null ? forensic_confidence * 100 : pct).toFixed(1)}%</span>
+        <span className="text-white font-bold tabular-nums">
+          {(forensic_confidence != null
+            ? forensic_confidence * 100
+            : pct
+          ).toFixed(1)}
+          %
+        </span>
       </div>
       <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-5">
         <div
           className={`h-full rounded-full transition-all duration-700 ${cfg.bar}`}
-          style={{ width: `${forensic_confidence != null ? forensic_confidence * 100 : pct}%` }}
+          style={{
+            width: `${forensic_confidence != null ? forensic_confidence * 100 : pct}%`,
+          }}
         />
       </div>
 
       {forensic_verdict && (
         <div className="mb-4 p-3 bg-white/5 border border-white/8 rounded-lg">
-          <p className="text-white/40 text-xs uppercase tracking-widest mb-2">Forensic Verdict</p>
-          <p className="text-sm font-semibold text-fuchsia-300 mb-2">{forensic_verdict}</p>
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-2">
+            Forensic Verdict
+          </p>
+          <p className="text-sm font-semibold text-fuchsia-300 mb-2">
+            {forensic_verdict}
+          </p>
           {anchor_status && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-white/40">Chain Status:</span>
-              <ChainStatusBadge 
-                status={anchor_status} 
+              <ChainStatusBadge
+                status={anchor_status}
                 issuer={chain_issuer}
                 timestamp={chain_timestamp}
                 revoked={chain_revoked}
