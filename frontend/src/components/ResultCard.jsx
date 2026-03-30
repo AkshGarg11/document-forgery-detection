@@ -459,7 +459,10 @@ export default function ResultCard({
       )}
 
       {/* Detection Previews */}
-      {(signature_preview_url || forgery_preview_url || doctamper_preview_url || previewUrl) && (
+      {(signature_preview_url ||
+        forgery_preview_url ||
+        doctamper_preview_url ||
+        previewUrl) && (
         <div className="mb-4 pt-4 border-t border-white/8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
             Detection Previews
