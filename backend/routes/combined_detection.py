@@ -10,6 +10,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from services.blockchain_service import issue_document, verify_document
+from services.doctamper_service import DocTamperService
 from services.signature_verification_service import predict_signature_verification
 from services.copy_move_service import CopyMoveForgeryDetectionService
 from utils.hashing import compute_hash
@@ -31,7 +32,7 @@ class ForgeryRegion(BaseModel):
 
 
 class CombinedDetectionResponse(BaseModel):
-    """Response from combined signature + copy-move detection."""
+    """Response from combined signature + forgery detection models."""
     # Signature Verification Results
     signature_detected: bool
     signature_result: str
@@ -47,6 +48,13 @@ class CombinedDetectionResponse(BaseModel):
     is_forged: bool
     all_forgery_scores: dict[str, float]
     forgery_preview: str
+
+    # DocTamper Forgery Localization Results
+    doctamper_type: str
+    doctamper_confidence: float
+    doctamper_is_forged: bool
+    doctamper_tampered_pixels_ratio: float
+    doctamper_preview: str
 
     # Combined Analysis
     final_verdict: str
@@ -71,7 +79,7 @@ class CombinedDetectionResponse(BaseModel):
 @router.post(
     "/combined-detection/predict",
     response_model=CombinedDetectionResponse,
-    summary="Run signature verification + copy-move detection in parallel",
+    summary="Run signature verification + copy-move + DocTamper detection in parallel",
 )
 async def combined_detection_predict(
     image: UploadFile = File(...),
@@ -81,6 +89,7 @@ async def combined_detection_predict(
     Combined forgery detection endpoint that runs:
     1. Signature area detection & authenticity verification
     2. Copy-move & forgery type classification
+    3. DocTamper localization (highlight tampered pixels)
 
     Both run in parallel for efficiency.
     """
@@ -97,15 +106,24 @@ async def combined_detection_predict(
 
     doc_hash = compute_hash(content)
 
-    # Run both detection methods in parallel
+    # Run all detection methods in parallel
     try:
         loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            sig_result = await loop.run_in_executor(
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            sig_future = loop.run_in_executor(
                 executor, predict_signature_verification, content
             )
-            copy_move_result = await loop.run_in_executor(
+            copy_move_future = loop.run_in_executor(
                 executor, CopyMoveForgeryDetectionService.predict_copy_move_forgery, content
+            )
+            doctamper_future = loop.run_in_executor(
+                executor, DocTamperService.predict_doc_tamper, content
+            )
+
+            sig_result, copy_move_result, doctamper_result = await asyncio.gather(
+                sig_future,
+                copy_move_future,
+                doctamper_future,
             )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -152,26 +170,33 @@ async def combined_detection_predict(
     # Combine analysis
     sig_forged = sig_result.get("forensic_verdict") == "Forged" if sig_result.get("signature_detected") else None
     copy_move_forged = copy_move_result.get("is_forged")
+    doctamper_forged = doctamper_result.get("is_forged")
 
     # Determine final verdict and risk level
     final_verdict = "AUTHENTIC"
     risk_level = "low"
 
-    if sig_result.get("signature_detected"):
-        if sig_forged:
-            final_verdict = "FORGED - Signature Tampering"
-            risk_level = "high"
+    if sig_result.get("signature_detected") and sig_forged:
+        final_verdict = "FORGED - Signature Tampering"
+        risk_level = "high"
+    elif doctamper_forged:
+        final_verdict = "FORGED - Tampered Region Detected"
+        risk_level = "high" if doctamper_result.get("confidence", 0) > 0.7 else "medium"
+    elif copy_move_forged:
+        forgery_type = copy_move_result.get("forgery_type", "unknown").replace("_", " ").title()
+        final_verdict = f"FORGED - {forgery_type}"
+        risk_level = "high" if copy_move_result.get("confidence", 0) > 0.7 else "medium"
     else:
-        # No signature detected - use copy-move result
-        if copy_move_forged:
-            forgery_type = copy_move_result.get("forgery_type", "unknown").replace("_", " ").title()
-            final_verdict = f"FORGED - {forgery_type}"
-            risk_level = "high" if copy_move_result.get("confidence", 0) > 0.7 else "medium"
-        else:
-            final_verdict = "AUTHENTIC"
-            risk_level = "low"
+        final_verdict = "AUTHENTIC"
+        risk_level = "low"
 
-    reason = f"Signature: {sig_result.get('reason', 'N/A')} | Copy-Move: {copy_move_result.get('forgery_type', 'N/A')} ({copy_move_result.get('confidence', 0):.1%})"
+    reason = (
+        f"Signature: {sig_result.get('reason', 'N/A')} | "
+        f"Copy-Move: {copy_move_result.get('forgery_type', 'N/A')} ({copy_move_result.get('confidence', 0):.1%}) | "
+        f"DocTamper: {doctamper_result.get('forgery_type', 'N/A')} "
+        f"({doctamper_result.get('confidence', 0):.1%}, "
+        f"tampered area {doctamper_result.get('tampered_pixels_ratio', 0):.1%})"
+    )
 
     # Extract signature box
     sig_box = None
@@ -194,6 +219,12 @@ async def combined_detection_predict(
         is_forged=copy_move_result.get("is_forged", False),
         all_forgery_scores=copy_move_result.get("all_scores", {}),
         forgery_preview=copy_move_result.get("annotated_preview", ""),
+        # DocTamper localization
+        doctamper_type=doctamper_result.get("forgery_type", "unknown"),
+        doctamper_confidence=doctamper_result.get("confidence", 0.0),
+        doctamper_is_forged=doctamper_result.get("is_forged", False),
+        doctamper_tampered_pixels_ratio=doctamper_result.get("tampered_pixels_ratio", 0.0),
+        doctamper_preview=doctamper_result.get("annotated_preview", ""),
         # Combined
         final_verdict=final_verdict,
         risk_level=risk_level,

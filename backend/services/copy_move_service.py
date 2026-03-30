@@ -1,7 +1,12 @@
 """Service layer for copy-move forgery detection."""
 
 import os
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from ai_models.copy_move_detector import CopyMoveForgeryDetectionPipeline
 

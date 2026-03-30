@@ -204,6 +204,11 @@ export default function ResultCard({
   all_forgery_scores,
   signature_preview_url,
   forgery_preview_url,
+  doctamper_type,
+  doctamper_confidence,
+  doctamper_is_forged,
+  doctamper_tampered_pixels_ratio,
+  doctamper_preview_url,
 }) {
   const cfg = final_verdict
     ? LABEL_CONFIG[final_verdict.split(" - ")[0]] || LABEL_CONFIG.Suspicious
@@ -279,8 +284,8 @@ export default function ResultCard({
         </div>
       </div>
 
-      {/* Dual Detection Results */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+      {/* Multi-Model Detection Results */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {/* Signature Verification */}
         <div className="p-4 bg-white/5 border border-white/8 rounded-xl">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
@@ -359,6 +364,47 @@ export default function ResultCard({
             </div>
           </div>
         </div>
+
+        {/* DocTamper Localization */}
+        <div className="p-4 bg-white/5 border border-white/8 rounded-xl">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
+            🎯 DocTamper Localization
+          </p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Status</span>
+              <span
+                className={`font-semibold text-sm ${
+                  doctamper_is_forged ? "text-red-400" : "text-emerald-400"
+                }`}
+              >
+                {doctamper_is_forged ? "Tampered" : "Authentic"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Type</span>
+              <span
+                className={`font-semibold text-sm ${
+                  doctamper_is_forged ? "text-red-400" : "text-emerald-400"
+                }`}
+              >
+                {toTitleCase((doctamper_type || "unknown").replace("_", " "))}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Confidence</span>
+              <span className="text-white font-bold text-sm">
+                {((doctamper_confidence || 0) * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Tampered Area</span>
+              <span className="text-white font-bold text-sm">
+                {((doctamper_tampered_pixels_ratio || 0) * 100).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Detailed Scores */}
@@ -413,12 +459,12 @@ export default function ResultCard({
       )}
 
       {/* Detection Previews */}
-      {(signature_preview_url || forgery_preview_url || previewUrl) && (
+      {(signature_preview_url || forgery_preview_url || doctamper_preview_url || previewUrl) && (
         <div className="mb-4 pt-4 border-t border-white/8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
             Detection Previews
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {signature_preview_url && (
               <div className="rounded-lg overflow-hidden border border-white/10">
                 <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
@@ -439,6 +485,18 @@ export default function ResultCard({
                 <img
                   src={forgery_preview_url}
                   alt="Forgery detection result"
+                  className="w-full h-auto block"
+                />
+              </div>
+            )}
+            {doctamper_preview_url && (
+              <div className="rounded-lg overflow-hidden border border-white/10">
+                <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
+                  🎯 DocTamper Forgery Area
+                </p>
+                <img
+                  src={doctamper_preview_url}
+                  alt="DocTamper localization result"
                   className="w-full h-auto block"
                 />
               </div>

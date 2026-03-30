@@ -19,7 +19,7 @@ const toTitleCase = (str) => {
 
 /**
  * Upload an image file for combined forgery detection.
- * Runs signature verification and copy-move detection in parallel.
+ * Runs signature verification, copy-move, and DocTamper detection in parallel.
  * @param {File} file
  * @param {"save"|"find"} blockchainAction
  * @returns {Promise<{
@@ -92,6 +92,11 @@ export async function analyzeDocument(file, blockchainAction = "save") {
     forgery_confidence: payload.forgery_confidence,
     is_forged: payload.is_forged,
     all_forgery_scores: payload.all_forgery_scores,
+    // DocTamper localization results
+    doctamper_type: payload.doctamper_type,
+    doctamper_confidence: payload.doctamper_confidence,
+    doctamper_is_forged: payload.doctamper_is_forged,
+    doctamper_tampered_pixels_ratio: payload.doctamper_tampered_pixels_ratio,
     // Explanation and regions
     explanation: payload.reason,
     reasons: [
@@ -99,6 +104,8 @@ export async function analyzeDocument(file, blockchainAction = "save") {
       payload.signature_detected
         ? `Signature Verdict: ${payload.signature_verdict} (${(payload.signature_confidence * 100).toFixed(1)}%)`
         : `Forgery Type: ${forgeryType} (${(payload.forgery_confidence * 100).toFixed(1)}%)`,
+      `DocTamper Verdict: ${payload.doctamper_is_forged ? "Tampered" : "Authentic"} (${(payload.doctamper_confidence * 100).toFixed(1)}%)`,
+      `DocTamper Area: ${((payload.doctamper_tampered_pixels_ratio || 0) * 100).toFixed(1)}% pixels`,
       `Overall Risk Level: ${payload.risk_level.toUpperCase()}`,
       `Inference Device: ${payload.device}`,
     ],
@@ -117,10 +124,11 @@ export async function analyzeDocument(file, blockchainAction = "save") {
         : [],
     annotated_preview_url: payload.signature_detected
       ? payload.signature_preview
-      : payload.forgery_preview,
+      : payload.doctamper_preview || payload.forgery_preview,
     // Both detection previews for UI
     signature_preview_url: payload.signature_preview,
     forgery_preview_url: payload.forgery_preview,
+    doctamper_preview_url: payload.doctamper_preview,
   };
 }
 
