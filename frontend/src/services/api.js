@@ -6,26 +6,39 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 /**
- * Upload an image file for signature verification.
+ * Convert string to title case (capitalize first letter of each word)
+ * @param {string} str
+ * @returns {string}
+ */
+const toTitleCase = (str) => {
+  return str
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+};
+
+/**
+ * Upload an image file for combined forgery detection.
+ * Runs signature verification and copy-move detection in parallel.
  * @param {File} file
- * @param {"save"|"find"} _unusedAction
+ * @param {"save"|"find"} blockchainAction
  * @returns {Promise<{
  *  result: string,
  *  confidence: number,
  *  hash: string,
- *  cid: string,
- *  forensic_verdict?: string,
- *  forensic_confidence?: number,
- *  explanation?: string,
- *  reasons?: string[]
+ *  final_verdict: string,
+ *  risk_level: string,
+ *  signature_detected: boolean,
+ *  forgery_type: string,
+ *  ...
  * }>}
  */
-export async function analyzeDocument(file, _unusedAction = "save") {
+export async function analyzeDocument(file, blockchainAction = "save") {
   const formData = new FormData();
   formData.append("image", file);
-  formData.append("blockchain_action", _unusedAction);
+  formData.append("blockchain_action", blockchainAction);
 
-  const response = await fetch(`${BASE_URL}/signature-verification/predict`, {
+  const response = await fetch(`${BASE_URL}/combined-detection/predict`, {
     method: "POST",
     body: formData,
   });
@@ -40,13 +53,21 @@ export async function analyzeDocument(file, _unusedAction = "save") {
   }
 
   const payload = await response.json();
-  const isAuthentic = payload.result === "Authentic";
-  const isNoSignature = payload.signature_detected === false;
-  const confidence = payload.confidence;
+
+  // Map combined detection results to frontend format
+  const forgeryType = toTitleCase(payload.forgery_type.replace("_", " "));
+  const riskLevelColor = {
+    low: "#00DD00",
+    medium: "#FF9900",
+    high: "#FF0000",
+  };
 
   return {
-    result: isNoSignature ? "Suspicious" : isAuthentic ? "Authentic" : "Forged",
-    confidence,
+    result: payload.final_verdict,
+    confidence: Math.max(
+      payload.signature_confidence,
+      payload.forgery_confidence,
+    ),
     hash: payload.hash || "N/A",
     cid: "N/A",
     tx_hash: payload.tx_hash ?? null,
@@ -56,29 +77,50 @@ export async function analyzeDocument(file, _unusedAction = "save") {
     chain_revoked: payload.chain_revoked ?? null,
     chain_timestamp: payload.chain_timestamp ?? null,
     chain_issuer: payload.chain_issuer ?? null,
-    forensic_verdict: payload.forensic_verdict,
-    forensic_confidence: confidence,
+    // Combined verdict
+    final_verdict: payload.final_verdict,
+    risk_level: payload.risk_level,
+    risk_color: riskLevelColor[payload.risk_level] || "#FF9900",
+    // Signature verification results
+    signature_detected: payload.signature_detected,
+    signature_result: payload.signature_result,
+    signature_confidence: payload.signature_confidence,
+    signature_verdict: payload.signature_verdict,
+    signature_probabilities: payload.signature_probabilities,
+    // Copy-move detection results
+    forgery_type: payload.forgery_type,
+    forgery_confidence: payload.forgery_confidence,
+    is_forged: payload.is_forged,
+    all_forgery_scores: payload.all_forgery_scores,
+    // Explanation and regions
     explanation: payload.reason,
     reasons: [
-      `Authentic probability: ${payload.probabilities.authentic.toFixed(2)}%`,
-      `Forged probability: ${payload.probabilities.forged.toFixed(2)}%`,
-      `Inference device: ${payload.device}`,
-      `Layout model: ${payload.weights.layout}`,
-      `Signature model: ${payload.weights.signature}`,
+      `Signature Detected: ${payload.signature_detected ? "Yes" : "No"}`,
+      payload.signature_detected
+        ? `Signature Verdict: ${payload.signature_verdict} (${(payload.signature_confidence * 100).toFixed(1)}%)`
+        : `Forgery Type: ${forgeryType} (${(payload.forgery_confidence * 100).toFixed(1)}%)`,
+      `Overall Risk Level: ${payload.risk_level.toUpperCase()}`,
+      `Inference Device: ${payload.device}`,
     ],
-    forgery_regions: isNoSignature
-      ? []
-      : [
-          {
-            x: payload.signature_box.x,
-            y: payload.signature_box.y,
-            w: payload.signature_box.w,
-            h: payload.signature_box.h,
-            source: "layout.pt",
-            score: confidence,
-          },
-        ],
-    annotated_preview_url: payload.annotated_preview,
+    forgery_regions:
+      payload.signature_detected && payload.signature_box
+        ? [
+            {
+              x: payload.signature_box.x,
+              y: payload.signature_box.y,
+              w: payload.signature_box.w,
+              h: payload.signature_box.h,
+              source: "layout.pt",
+              score: payload.signature_confidence,
+            },
+          ]
+        : [],
+    annotated_preview_url: payload.signature_detected
+      ? payload.signature_preview
+      : payload.forgery_preview,
+    // Both detection previews for UI
+    signature_preview_url: payload.signature_preview,
+    forgery_preview_url: payload.forgery_preview,
   };
 }
 

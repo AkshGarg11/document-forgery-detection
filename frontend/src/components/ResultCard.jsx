@@ -23,6 +23,18 @@ const LABEL_CONFIG = {
   },
 };
 
+/**
+ * Convert string to title case (capitalize first letter of each word)
+ * @param {string} str
+ * @returns {string}
+ */
+const toTitleCase = (str) => {
+  return str
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+};
+
 function HashRow({ label, value }) {
   return (
     <div className="mt-4">
@@ -177,9 +189,32 @@ export default function ResultCard({
   suspected_forgery_type,
   forgery_regions,
   previewUrl,
+  // Combined detection fields
+  final_verdict,
+  risk_level,
+  risk_color,
+  signature_detected,
+  signature_result,
+  signature_confidence,
+  signature_verdict,
+  signature_probabilities,
+  forgery_type,
+  forgery_confidence,
+  is_forged,
+  all_forgery_scores,
+  signature_preview_url,
+  forgery_preview_url,
 }) {
-  const cfg = LABEL_CONFIG[result] || LABEL_CONFIG.Suspicious;
+  const cfg = final_verdict
+    ? LABEL_CONFIG[final_verdict.split(" - ")[0]] || LABEL_CONFIG.Suspicious
+    : LABEL_CONFIG[result] || LABEL_CONFIG.Suspicious;
   const pct = (confidence * 100).toFixed(1);
+  const riskColors = {
+    low: "emerald",
+    medium: "amber",
+    high: "red",
+  };
+  const riskColor = riskColors[risk_level] || "amber";
 
   return (
     <div
@@ -201,122 +236,238 @@ export default function ResultCard({
       `}</style>
 
       <h2 className="text-lg font-bold text-white mb-5 flex items-center gap-2">
-        Analysis Report
+        Combined Analysis Report
       </h2>
 
-      <div className="flex items-center justify-between mb-4">
-        <span className="text-white/50 text-sm">Classification</span>
-        <span
-          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold ${cfg.badge}`}
-        >
-          {cfg.icon} {result}
-        </span>
+      {/* Overall Risk Level */}
+      <div className="mb-6 p-4 bg-white/5 border border-white/8 rounded-xl">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-white/50 text-sm font-medium">
+            Overall Status
+          </span>
+          <span
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold border ${
+              riskColor === "emerald"
+                ? "text-emerald-400 bg-emerald-500/15 border-emerald-500/30"
+                : riskColor === "amber"
+                  ? "text-amber-400 bg-amber-500/15 border-amber-500/30"
+                  : "text-red-400 bg-red-500/15 border-red-500/30"
+            }`}
+          >
+            {final_verdict || result}
+          </span>
+        </div>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-white/50 text-xs uppercase">Risk Level</span>
+          <span className="text-white font-bold uppercase tracking-wider">
+            {risk_level}
+          </span>
+        </div>
+        <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-700 ${
+              riskColor === "emerald"
+                ? "bg-emerald-500"
+                : riskColor === "amber"
+                  ? "bg-amber-500"
+                  : "bg-red-500"
+            }`}
+            style={{
+              width: `${risk_level === "low" ? 33 : risk_level === "medium" ? 66 : 100}%`,
+            }}
+          />
+        </div>
       </div>
 
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-white/50 text-sm">Forensic Confidence</span>
-        <span className="text-white font-bold tabular-nums">
-          {(forensic_confidence != null
-            ? forensic_confidence * 100
-            : pct
-          ).toFixed(1)}
-          %
-        </span>
-      </div>
-      <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-5">
-        <div
-          className={`h-full rounded-full transition-all duration-700 ${cfg.bar}`}
-          style={{
-            width: `${forensic_confidence != null ? forensic_confidence * 100 : pct}%`,
-          }}
-        />
+      {/* Dual Detection Results */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        {/* Signature Verification */}
+        <div className="p-4 bg-white/5 border border-white/8 rounded-xl">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
+            🔐 Signature Verification
+          </p>
+          <div className="space-y-2">
+            {signature_detected ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/60 text-sm">Detection</span>
+                  <span className="text-emerald-400 font-semibold text-sm">
+                    ✓ Found
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/60 text-sm">Verdict</span>
+                  <span
+                    className={`font-semibold text-sm ${
+                      signature_verdict === "Authentic"
+                        ? "text-emerald-400"
+                        : "text-red-400"
+                    }`}
+                  >
+                    {signature_verdict}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-white/60 text-sm">Confidence</span>
+                  <span className="text-white font-bold text-sm">
+                    {(signature_confidence * 100).toFixed(0)}%
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-white/60 text-sm">Detection</span>
+                <span className="text-amber-400 font-semibold text-sm">
+                  ⚠ Not Found
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Copy-Move Detection */}
+        <div className="p-4 bg-white/5 border border-white/8 rounded-xl">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
+            🔍 Forgery Type Detection
+          </p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Type</span>
+              <span
+                className={`font-semibold text-sm ${
+                  is_forged ? "text-red-400" : "text-emerald-400"
+                }`}
+              >
+                {toTitleCase(forgery_type.replace(/([A-Z])/g, " $1").trim())}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Status</span>
+              <span
+                className={`font-semibold text-sm ${
+                  is_forged ? "text-red-400" : "text-emerald-400"
+                }`}
+              >
+                {is_forged ? "Forged" : "Authentic"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-white/60 text-sm">Confidence</span>
+              <span className="text-white font-bold text-sm">
+                {(forgery_confidence * 100).toFixed(0)}%
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {forensic_verdict && (
-        <div className="mb-4 p-3 bg-white/5 border border-white/8 rounded-lg">
-          <p className="text-white/40 text-xs uppercase tracking-widest mb-2">
-            Forensic Verdict
+      {/* Detailed Scores */}
+      {(signature_probabilities ||
+        all_forgery_scores ||
+        (reasons && reasons.length > 0)) && (
+        <div className="mb-4 pt-4 border-t border-white/8">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
+            Detailed Analysis
           </p>
-          <p className="text-sm font-semibold text-fuchsia-300 mb-2">
-            {forensic_verdict}
-          </p>
-          {anchor_status && (
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-white/40">Chain Status:</span>
-              <ChainStatusBadge
-                status={anchor_status}
-                issuer={chain_issuer}
-                timestamp={chain_timestamp}
-                revoked={chain_revoked}
-              />
+
+          {signature_probabilities &&
+            Object.keys(signature_probabilities).length > 0 && (
+              <div className="mb-3">
+                <p className="text-white/60 text-xs font-medium mb-2">
+                  Signature Classification:
+                </p>
+                {Object.entries(signature_probabilities).map(([key, val]) => (
+                  <ScoreBar key={key} label={key} score={val} />
+                ))}
+              </div>
+            )}
+
+          {all_forgery_scores && Object.keys(all_forgery_scores).length > 0 && (
+            <div className="mb-3">
+              <p className="text-white/60 text-xs font-medium mb-2">
+                Forgery Type Classification:
+              </p>
+              {Object.entries(all_forgery_scores).map(([key, val]) => (
+                <ScoreBar
+                  key={key}
+                  label={toTitleCase(key.replace("_", " "))}
+                  score={val}
+                />
+              ))}
+            </div>
+          )}
+
+          {reasons && reasons.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-white/8">
+              <p className="text-white/50 text-xs font-medium mb-2">
+                Analysis Notes:
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-xs text-white/70">
+                {reasons.map((reason, idx) => (
+                  <li key={idx}>{reason}</li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
       )}
 
-      {(explanation ||
-        suspected_forgery_type ||
-        (reasons && reasons.length > 0)) && (
+      {/* Detection Previews */}
+      {(signature_preview_url || forgery_preview_url || previewUrl) && (
         <div className="mb-4 pt-4 border-t border-white/8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
-            Analysis Evidence
+            Detection Previews
           </p>
-          {suspected_forgery_type && (
-            <p className="text-sm text-fuchsia-300 mb-2">
-              Suspected forgery type:{" "}
-              <span className="font-semibold">{suspected_forgery_type}</span>
-            </p>
-          )}
-          {explanation && (
-            <p className="text-sm text-white/70 mb-2">{explanation}</p>
-          )}
-          {reasons && reasons.length > 0 && (
-            <ul className="list-disc pl-5 space-y-1 text-sm text-white/70">
-              {reasons.map((reason, idx) => (
-                <li key={idx}>{reason}</li>
-              ))}
-            </ul>
-          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {signature_preview_url && (
+              <div className="rounded-lg overflow-hidden border border-white/10">
+                <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
+                  🔐 Signature Detection
+                </p>
+                <img
+                  src={signature_preview_url}
+                  alt="Signature detection result"
+                  className="w-full h-auto block"
+                />
+              </div>
+            )}
+            {forgery_preview_url && (
+              <div className="rounded-lg overflow-hidden border border-white/10">
+                <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
+                  🔍 Forgery Classification
+                </p>
+                <img
+                  src={forgery_preview_url}
+                  alt="Forgery detection result"
+                  className="w-full h-auto block"
+                />
+              </div>
+            )}
+          </div>
         </div>
       )}
 
-      <RegionOverlay
-        previewUrl={previewUrl}
-        forgery_regions={forgery_regions}
-      />
+      {/* Blockchain Status */}
+      {anchor_status && (
+        <div className="mb-4 pt-4 border-t border-white/8">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
+            ⛓️ Blockchain Status
+          </p>
+          <ChainStatusBadge
+            status={anchor_status}
+            issuer={chain_issuer}
+            timestamp={chain_timestamp}
+            revoked={chain_revoked}
+          />
+        </div>
+      )}
 
-      {module_scores &&
-        Object.keys(module_scores).some((k) => module_scores[k] != null) && (
-          <div className="mb-4 pt-4 border-t border-white/8">
-            <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
-              Module Scores
-            </p>
-            {module_scores.ela != null && (
-              <ScoreBar
-                label="Error Level Analysis (ELA)"
-                score={module_scores.ela}
-              />
-            )}
-            {module_scores.copy_move != null && (
-              <ScoreBar
-                label="Copy-Move Detection"
-                score={module_scores.copy_move}
-              />
-            )}
-            {module_scores.nlp != null && (
-              <ScoreBar label="Text Anomaly (NLP)" score={module_scores.nlp} />
-            )}
-          </div>
-        )}
-
+      {/* Hash & Blockchain Data */}
       <div className="pt-4 border-t border-white/8">
         {hash && hash !== "N/A" && (
           <HashRow label="Document SHA-256" value={hash} />
         )}
         {cid && cid !== "N/A" && <HashRow label="IPFS CID" value={cid} />}
-        {anchor_status && (
-          <HashRow label="Anchor Status" value={anchor_status} />
-        )}
         {tx_hash && <HashRow label="Blockchain TX" value={tx_hash} />}
         {anchor_error && <HashRow label="Anchor Error" value={anchor_error} />}
       </div>

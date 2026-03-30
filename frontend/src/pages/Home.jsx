@@ -48,21 +48,21 @@ export default function Home() {
   const displayPreviewUrl = result?.annotated_preview_url || previewUrl;
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-16">
+    <main className="max-w-3xl mx-auto px-4 py-16">
       <div className="text-center mb-12">
         <div className="inline-flex items-center gap-2 bg-violet-500/10 border border-violet-500/20 rounded-full px-4 py-1.5 text-violet-400 text-sm font-medium mb-6">
           <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse inline-block" />
-          Signature Region + Verification
+          Multi-Model Detection
         </div>
         <h1 className="text-4xl md:text-5xl font-extrabold text-white leading-tight mb-4">
-          Signature{" "}
+          Forgery{" "}
           <span className="bg-linear-to-r from-violet-400 via-fuchsia-400 to-cyan-400 bg-clip-text text-transparent">
-            Verification
+            Detection
           </span>
         </h1>
-        <p className="text-white/50 text-lg max-w-md mx-auto leading-relaxed">
-          Upload an image, detect the signature region, and verify authentic vs
-          forged.
+        <p className="text-white/50 text-lg max-w-xl mx-auto leading-relaxed">
+          Parallel analysis: detect signature regions, verify authenticity, and
+          detect copy-move/splicing forgeries.
         </p>
       </div>
 

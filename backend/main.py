@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.verify import router as verify_router
 from routes.revoke import router as revoke_router
 from routes.signature_verification import router as signature_verification_router
+from routes.combined_detection import router as combined_detection_router
 
 app = FastAPI(
     title="Document Forgery Detection API",
@@ -31,6 +32,11 @@ app.include_router(
     signature_verification_router,
     prefix="/api/v1",
     tags=["Signature Verification"],
+)
+app.include_router(
+    combined_detection_router,
+    prefix="/api/v1",
+    tags=["Combined Detection"],
 )
 
 
