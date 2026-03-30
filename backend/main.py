@@ -5,9 +5,9 @@ Entry point for the backend service.
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes.upload import router as upload_router
 from routes.verify import router as verify_router
 from routes.revoke import router as revoke_router
+from routes.signature_verification import router as signature_verification_router
 
 app = FastAPI(
     title="Document Forgery Detection API",
@@ -25,9 +25,13 @@ app.add_middleware(
 )
 
 # Register routers
-app.include_router(upload_router, prefix="/api/v1", tags=["Upload"])
 app.include_router(verify_router, prefix="/api/v1", tags=["Blockchain"])
 app.include_router(revoke_router, prefix="/api/v1", tags=["Blockchain"])
+app.include_router(
+    signature_verification_router,
+    prefix="/api/v1",
+    tags=["Signature Verification"],
+)
 
 
 @app.get("/health", tags=["Health"])

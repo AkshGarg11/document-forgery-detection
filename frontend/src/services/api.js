@@ -6,34 +6,26 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 /**
- * Upload a document file for forgery analysis.
+ * Upload an image file for signature verification.
  * @param {File} file
- * @param {"save"|"find"} blockchainAction
+ * @param {"save"|"find"} _unusedAction
  * @returns {Promise<{
  *  result: string,
  *  confidence: number,
  *  hash: string,
  *  cid: string,
- *  tx_hash?: string|null,
- *  anchor_status?: string|null,
- *  anchor_error?: string|null,
- *  chain_exists?: boolean|null,
- *  chain_revoked?: boolean|null,
- *  chain_timestamp?: number|null,
- *  chain_issuer?: string|null,
- *  module_scores?: Record<string, number>,
+ *  forensic_verdict?: string,
+ *  forensic_confidence?: number,
  *  explanation?: string,
- *  reasons?: string[],
- *  suspected_forgery_type?: string,
- *  forgery_regions?: Array<{x:number,y:number,w:number,h:number,source?:string,score?:number}>
+ *  reasons?: string[]
  * }>}
  */
-export async function analyzeDocument(file, blockchainAction = "save") {
+export async function analyzeDocument(file, _unusedAction = "save") {
   const formData = new FormData();
-  formData.append("file", file);
-  formData.append("blockchain_action", blockchainAction);
+  formData.append("image", file);
+  formData.append("blockchain_action", _unusedAction);
 
-  const response = await fetch(`${BASE_URL}/upload`, {
+  const response = await fetch(`${BASE_URL}/signature-verification/predict`, {
     method: "POST",
     body: formData,
   });
@@ -47,7 +39,47 @@ export async function analyzeDocument(file, blockchainAction = "save") {
     );
   }
 
-  return response.json();
+  const payload = await response.json();
+  const isAuthentic = payload.result === "Authentic";
+  const isNoSignature = payload.signature_detected === false;
+  const confidence = payload.confidence;
+
+  return {
+    result: isNoSignature ? "Suspicious" : isAuthentic ? "Authentic" : "Forged",
+    confidence,
+    hash: payload.hash || "N/A",
+    cid: "N/A",
+    tx_hash: payload.tx_hash ?? null,
+    anchor_status: payload.anchor_status ?? null,
+    anchor_error: payload.anchor_error ?? null,
+    chain_exists: payload.chain_exists ?? null,
+    chain_revoked: payload.chain_revoked ?? null,
+    chain_timestamp: payload.chain_timestamp ?? null,
+    chain_issuer: payload.chain_issuer ?? null,
+    forensic_verdict: payload.forensic_verdict,
+    forensic_confidence: confidence,
+    explanation: payload.reason,
+    reasons: [
+      `Authentic probability: ${payload.probabilities.authentic.toFixed(2)}%`,
+      `Forged probability: ${payload.probabilities.forged.toFixed(2)}%`,
+      `Inference device: ${payload.device}`,
+      `Layout model: ${payload.weights.layout}`,
+      `Signature model: ${payload.weights.signature}`,
+    ],
+    forgery_regions: isNoSignature
+      ? []
+      : [
+          {
+            x: payload.signature_box.x,
+            y: payload.signature_box.y,
+            w: payload.signature_box.w,
+            h: payload.signature_box.h,
+            source: "layout.pt",
+            score: confidence,
+          },
+        ],
+    annotated_preview_url: payload.annotated_preview,
+  };
 }
 
 /**

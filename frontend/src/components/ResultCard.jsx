@@ -310,8 +310,10 @@ export default function ResultCard({
         )}
 
       <div className="pt-4 border-t border-white/8">
-        <HashRow label="Document SHA-256" value={hash} />
-        <HashRow label="IPFS CID" value={cid} />
+        {hash && hash !== "N/A" && (
+          <HashRow label="Document SHA-256" value={hash} />
+        )}
+        {cid && cid !== "N/A" && <HashRow label="IPFS CID" value={cid} />}
         {anchor_status && (
           <HashRow label="Anchor Status" value={anchor_status} />
         )}

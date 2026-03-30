@@ -1,10 +1,13 @@
-fastapi==0.110.1
-uvicorn[standard]==0.29.0
-python-multipart==0.0.9
-pydantic==2.7.1
-python-dotenv==1.0.1
-web3==6.15.1
-PyMuPDF==1.24.4
-Pillow==10.3.0
+fastapi>=0.116.0
+uvicorn[standard]>=0.35.0
+python-multipart>=0.0.20
+pydantic>=2.11.0
+python-dotenv>=1.1.0
+web3>=7.0.0
+Pillow>=11.0.0
+torch>=2.2.0
+torchvision>=0.17.0
+transformers>=4.40.0
+ultralytics>=8.3.0
 # ipfshttpclient==0.8.0a2  # Uncomment for real IPFS integration
 # requests==2.31.0      # For Pinata / HTTP-based IPFS
