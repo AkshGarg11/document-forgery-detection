@@ -15,4 +15,3 @@ build
 .env
 .env.*
 ai_models/data
-ai_models/models

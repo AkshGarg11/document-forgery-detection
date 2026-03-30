@@ -250,6 +250,68 @@ def verify_document(file_hash_hex: str) -> dict[str, Any]:
     }
 
 
+def get_document_history(file_hash_hex: str) -> list[dict[str, Any]]:
+    """Return chronological on-chain audit history for a document hash."""
+    _, contract = _get_web3_and_contract()
+    file_hash = _to_bytes32(file_hash_hex)
+
+    events: list[dict[str, Any]] = []
+
+    # Compatibility guard for different web3.py versions that vary between
+    # fromBlock/toBlock and from_block/to_block naming.
+    try:
+        issued_logs = contract.events.DocumentIssued().get_logs(
+            fromBlock=0,
+            toBlock="latest",
+            argument_filters={"fileHash": file_hash},
+        )
+        revoked_logs = contract.events.DocumentRevoked().get_logs(
+            fromBlock=0,
+            toBlock="latest",
+            argument_filters={"fileHash": file_hash},
+        )
+    except TypeError:
+        issued_logs = contract.events.DocumentIssued().get_logs(
+            from_block=0,
+            to_block="latest",
+            argument_filters={"fileHash": file_hash},
+        )
+        revoked_logs = contract.events.DocumentRevoked().get_logs(
+            from_block=0,
+            to_block="latest",
+            argument_filters={"fileHash": file_hash},
+        )
+
+    for log in issued_logs:
+        events.append(
+            {
+                "event": "issued",
+                "file_hash": _bytes_to_hex(log["args"]["fileHash"]),
+                "text_hash": _bytes_to_hex(log["args"]["textHash"]),
+                "issuer": log["args"]["issuer"],
+                "timestamp": int(log["args"]["timestamp"]),
+                "block_number": int(log["blockNumber"]),
+                "tx_hash": log["transactionHash"].hex(),
+            }
+        )
+
+    for log in revoked_logs:
+        events.append(
+            {
+                "event": "revoked",
+                "file_hash": _bytes_to_hex(log["args"]["fileHash"]),
+                "text_hash": "",
+                "issuer": log["args"]["issuer"],
+                "timestamp": int(log["args"]["timestamp"]),
+                "block_number": int(log["blockNumber"]),
+                "tx_hash": log["transactionHash"].hex(),
+            }
+        )
+
+    events.sort(key=lambda item: (item["timestamp"], item["block_number"]))
+    return events
+
+
 def revoke_document(file_hash_hex: str) -> str:
     """Revoke a previously issued file hash."""
     w3, contract = _get_web3_and_contract()

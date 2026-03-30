@@ -5,6 +5,8 @@ pydantic>=2.11.0
 python-dotenv>=1.1.0
 web3>=7.0.0
 Pillow>=11.0.0
+pypdfium2>=4.30.0
+pytesseract>=0.3.10
 torch>=2.2.0
 torchvision>=0.17.0
 segmentation-models-pytorch==0.3.3

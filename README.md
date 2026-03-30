@@ -32,6 +32,16 @@ docker compose up --build
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
 
+## One-Container Deployment (Hugging Face Space)
+
+This repository includes a root [Dockerfile](Dockerfile) for single-container deployment where frontend + backend + AI run together.
+
+- Frontend is built during Docker build and served by FastAPI.
+- API remains available under `/api/v1/*`.
+- Container uses `PORT=7860` by default for Hugging Face Spaces.
+
+See full setup in [HUGGINGFACE_DEPLOYMENT.md](HUGGINGFACE_DEPLOYMENT.md).
+
 ## Ports and Services
 
 When you run `docker compose up`, these containers start:
@@ -220,3 +230,5 @@ Set these in [.env](.env):
 - anchor status
 - blockchain transaction hash
 - anchor error (if any)
+
+For cloud/demo deployments, use public testnet (Sepolia) with RPC provider and keep keys in host secrets. Reference: [HUGGINGFACE_DEPLOYMENT.md](HUGGINGFACE_DEPLOYMENT.md).

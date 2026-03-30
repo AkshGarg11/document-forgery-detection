@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 /**
  * frontend/src/components/ResultCard.jsx
  */
@@ -22,6 +24,8 @@ const LABEL_CONFIG = {
     icon: "FORGED",
   },
 };
+
+const DOCTAMPER_ZERO_AREA_RATIO = 0.0005; // 0.05% => 0.0% when shown with one decimal
 
 /**
  * Convert string to title case (capitalize first letter of each word)
@@ -82,43 +86,6 @@ function ScoreBar({ label, score }) {
   );
 }
 
-function RegionOverlay({ previewUrl, forgery_regions }) {
-  if (!previewUrl || !forgery_regions || forgery_regions.length === 0)
-    return null;
-
-  return (
-    <div className="mb-4 pt-4 border-t border-white/8">
-      <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
-        Approximate Forgery Region
-      </p>
-      <div className="relative rounded-xl overflow-hidden border border-red-500/30">
-        <img
-          src={previewUrl}
-          alt="Uploaded document"
-          className="w-full h-auto block"
-        />
-        {forgery_regions.map((r, i) => (
-          <div
-            key={`${r.source || "region"}-${i}`}
-            className="absolute border-2 border-red-500 bg-red-500/10"
-            style={{
-              left: `${(r.x || 0) * 100}%`,
-              top: `${(r.y || 0) * 100}%`,
-              width: `${(r.w || 0) * 100}%`,
-              height: `${(r.h || 0) * 100}%`,
-            }}
-            title={`${r.source || "region"} (${Math.round((r.score || 0) * 100)}%)`}
-          />
-        ))}
-      </div>
-      <p className="text-white/50 text-xs mt-2">
-        Red boxes are approximate suspicious areas (not pixel-perfect
-        segmentation).
-      </p>
-    </div>
-  );
-}
-
 function ChainStatusBadge({ status, issuer, timestamp, revoked }) {
   const statusConfig = {
     anchored: { color: "emerald", label: "✓ Saved", detail: "Proof recorded" },
@@ -169,32 +136,72 @@ function ChainStatusBadge({ status, issuer, timestamp, revoked }) {
   );
 }
 
+function AuditTimeline({ events }) {
+  if (!events || events.length === 0) return null;
+
+  return (
+    <div className="mb-4 pt-4 border-t border-white/8">
+      <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
+        📜 Audit Timeline
+      </p>
+      <div className="space-y-2">
+        {events.map((entry, idx) => {
+          const eventLabel = entry.event === "revoked" ? "Revoked" : "Issued";
+          const ts = entry.timestamp
+            ? new Date(entry.timestamp * 1000).toLocaleString()
+            : "Unknown time";
+          return (
+            <div
+              key={`${entry.tx_hash}-${idx}`}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-2"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className={`text-xs font-semibold ${
+                    entry.event === "revoked"
+                      ? "text-red-400"
+                      : "text-emerald-400"
+                  }`}
+                >
+                  {eventLabel}
+                </span>
+                <span className="text-white/40 text-xs">
+                  Block {entry.block_number}
+                </span>
+              </div>
+              <p className="text-white/60 text-xs mt-1">
+                {ts} •{" "}
+                {entry.issuer
+                  ? `${entry.issuer.slice(0, 10)}...`
+                  : "Unknown issuer"}
+              </p>
+              <p className="text-violet-300 text-xs mt-1 break-all">
+                TX: {entry.tx_hash}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ResultCard({
-  result,
-  confidence,
   hash,
   cid,
   tx_hash,
   anchor_status,
   anchor_error,
-  chain_exists,
   chain_revoked,
   chain_timestamp,
   chain_issuer,
-  forensic_verdict,
-  forensic_confidence,
-  module_scores,
-  explanation,
-  reasons,
-  suspected_forgery_type,
-  forgery_regions,
+  audit_history,
   previewUrl,
+  onRevoke,
   // Combined detection fields
   final_verdict,
   risk_level,
-  risk_color,
   signature_detected,
-  signature_result,
   signature_confidence,
   signature_verdict,
   signature_probabilities,
@@ -202,6 +209,7 @@ export default function ResultCard({
   forgery_confidence,
   is_forged,
   all_forgery_scores,
+  forgery_regions,
   signature_preview_url,
   forgery_preview_url,
   doctamper_type,
@@ -209,17 +217,71 @@ export default function ResultCard({
   doctamper_is_forged,
   doctamper_tampered_pixels_ratio,
   doctamper_preview_url,
+  text_found,
+  extracted_text_preview,
+  ocr_engine,
+  document_metadata,
+  page_previews,
+  selected_page_index,
+  reasons,
 }) {
-  const cfg = final_verdict
-    ? LABEL_CONFIG[final_verdict.split(" - ")[0]] || LABEL_CONFIG.Suspicious
-    : LABEL_CONFIG[result] || LABEL_CONFIG.Suspicious;
-  const pct = (confidence * 100).toFixed(1);
+  const doctamperSkipped = doctamper_type === "skipped_no_text";
+  const effectiveDoctamperTampered =
+    Boolean(doctamper_is_forged) &&
+    Number(doctamper_tampered_pixels_ratio || 0) > DOCTAMPER_ZERO_AREA_RATIO;
+
+  const cfg =
+    LABEL_CONFIG[final_verdict?.split(" - ")[0]] || LABEL_CONFIG.Suspicious;
   const riskColors = {
     low: "emerald",
     medium: "amber",
     high: "red",
   };
   const riskColor = riskColors[risk_level] || "amber";
+  const primaryPreviewUrl =
+    (signature_detected && signature_preview_url) ||
+    (!doctamperSkipped && doctamper_preview_url) ||
+    forgery_preview_url ||
+    previewUrl;
+  const primaryPreviewLabel =
+    (signature_detected && signature_preview_url && "Signature Detection") ||
+    (!doctamperSkipped && doctamper_preview_url && "DocTamper + Overlay") ||
+    (forgery_preview_url && "Forgery Classification") ||
+    "Uploaded Document";
+
+  const previewPages =
+    Array.isArray(page_previews) && page_previews.length > 0
+      ? page_previews
+      : primaryPreviewUrl
+        ? [primaryPreviewUrl]
+        : [];
+
+  const safeInitialPage = Math.min(
+    Math.max(Number(selected_page_index || 1), 1),
+    previewPages.length || 1,
+  );
+  const [currentPage, setCurrentPage] = useState(safeInitialPage);
+  const boundedCurrentPage = Math.min(
+    Math.max(currentPage, 1),
+    previewPages.length || 1,
+  );
+
+  const shownPreviewUrl =
+    previewPages.length > 0
+      ? previewPages[Math.max(0, boundedCurrentPage - 1)]
+      : null;
+  const shownPreviewLabel =
+    previewPages.length > 1
+      ? `${primaryPreviewLabel} - Page ${boundedCurrentPage}/${previewPages.length}`
+      : primaryPreviewLabel;
+  const showSignatureOverlay =
+    signature_detected &&
+    Array.isArray(forgery_regions) &&
+    forgery_regions.length > 0;
+  const signatureVerdictText = String(signature_verdict || "").toLowerCase();
+  const signatureIsForged = signatureVerdictText.includes("forged");
+  const signatureIsAuthentic =
+    signatureVerdictText.includes("authentic") && !signatureIsForged;
 
   return (
     <div
@@ -259,7 +321,7 @@ export default function ResultCard({
                   : "text-red-400 bg-red-500/15 border-red-500/30"
             }`}
           >
-            {final_verdict || result}
+            {final_verdict}
           </span>
         </div>
         <div className="flex items-center justify-between mb-2">
@@ -304,9 +366,7 @@ export default function ResultCard({
                   <span className="text-white/60 text-sm">Verdict</span>
                   <span
                     className={`font-semibold text-sm ${
-                      signature_verdict === "Authentic"
-                        ? "text-emerald-400"
-                        : "text-red-400"
+                      signatureIsAuthentic ? "text-emerald-400" : "text-red-400"
                     }`}
                   >
                     {signature_verdict}
@@ -375,33 +435,90 @@ export default function ResultCard({
               <span className="text-white/60 text-sm">Status</span>
               <span
                 className={`font-semibold text-sm ${
-                  doctamper_is_forged ? "text-red-400" : "text-emerald-400"
+                  doctamperSkipped
+                    ? "text-amber-400"
+                    : effectiveDoctamperTampered
+                      ? "text-red-400"
+                      : "text-emerald-400"
                 }`}
               >
-                {doctamper_is_forged ? "Tampered" : "Authentic"}
+                {doctamperSkipped
+                  ? "Skipped (No Text)"
+                  : effectiveDoctamperTampered
+                    ? "Tampered"
+                    : "Authentic"}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-white/60 text-sm">Type</span>
               <span
                 className={`font-semibold text-sm ${
-                  doctamper_is_forged ? "text-red-400" : "text-emerald-400"
+                  doctamperSkipped
+                    ? "text-amber-400"
+                    : effectiveDoctamperTampered
+                      ? "text-red-400"
+                      : "text-emerald-400"
                 }`}
               >
-                {toTitleCase((doctamper_type || "unknown").replace("_", " "))}
+                {doctamperSkipped
+                  ? "Skipped"
+                  : toTitleCase(
+                      (doctamper_type || "unknown").replace(/_/g, " "),
+                    )}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-white/60 text-sm">Confidence</span>
               <span className="text-white font-bold text-sm">
-                {((doctamper_confidence || 0) * 100).toFixed(0)}%
+                {doctamperSkipped
+                  ? "N/A"
+                  : `${((doctamper_confidence || 0) * 100).toFixed(0)}%`}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-white/60 text-sm">Tampered Area</span>
               <span className="text-white font-bold text-sm">
-                {((doctamper_tampered_pixels_ratio || 0) * 100).toFixed(1)}%
+                {doctamperSkipped
+                  ? "N/A"
+                  : `${((doctamper_tampered_pixels_ratio || 0) * 100).toFixed(1)}%`}
               </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* OCR + Metadata */}
+      <div className="mb-4 pt-4 border-t border-white/8">
+        <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
+          Document Metadata & OCR
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <p className="text-white/60 text-xs mb-1">OCR Status</p>
+            <p className="text-sm font-semibold text-white">
+              {text_found ? "Text Found" : "No Text Found"}
+            </p>
+            <p className="text-white/50 text-xs mt-1">
+              Engine: {ocr_engine || "unknown"}
+            </p>
+            {extracted_text_preview && (
+              <p className="text-white/60 text-xs mt-2 line-clamp-4">
+                {extracted_text_preview}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+            <p className="text-white/60 text-xs mb-1">File Metadata</p>
+            <div className="space-y-1 text-xs text-white/70">
+              <p>Name: {document_metadata?.file_name || "N/A"}</p>
+              <p>Type: {document_metadata?.content_type || "N/A"}</p>
+              <p>Format: {document_metadata?.format || "N/A"}</p>
+              <p>
+                Resolution: {document_metadata?.width || 0} x{" "}
+                {document_metadata?.height || 0}
+              </p>
+              <p>Size: {document_metadata?.size_bytes || 0} bytes</p>
             </div>
           </div>
         </div>
@@ -458,62 +575,105 @@ export default function ResultCard({
         </div>
       )}
 
-      {/* Detection Previews */}
-      {(signature_preview_url ||
-        forgery_preview_url ||
-        doctamper_preview_url ||
-        previewUrl) && (
+      {/* Detection Preview */}
+      {shownPreviewUrl && (
         <div className="mb-4 pt-4 border-t border-white/8">
-          <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
-            Detection Previews
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {signature_preview_url && (
-              <div className="rounded-lg overflow-hidden border border-white/10">
-                <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
-                  🔐 Signature Detection
-                </p>
-                <img
-                  src={signature_preview_url}
-                  alt="Signature detection result"
-                  className="w-full h-auto block"
-                />
-              </div>
-            )}
-            {forgery_preview_url && (
-              <div className="rounded-lg overflow-hidden border border-white/10">
-                <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
-                  🔍 Forgery Classification
-                </p>
-                <img
-                  src={forgery_preview_url}
-                  alt="Forgery detection result"
-                  className="w-full h-auto block"
-                />
-              </div>
-            )}
-            {doctamper_preview_url && (
-              <div className="rounded-lg overflow-hidden border border-white/10">
-                <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
-                  🎯 DocTamper Forgery Area
-                </p>
-                <img
-                  src={doctamper_preview_url}
-                  alt="DocTamper localization result"
-                  className="w-full h-auto block"
-                />
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <p className="text-white/40 text-xs uppercase tracking-widest">
+              Detection Preview
+            </p>
+            {previewPages.length > 1 && (
+              <div className="inline-flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={boundedCurrentPage <= 1}
+                  className="px-2 py-1 text-xs rounded-md border border-white/15 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Prev
+                </button>
+                <span className="text-xs text-white/60 min-w-20 text-center">
+                  Page {boundedCurrentPage}/{previewPages.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((p) => Math.min(previewPages.length, p + 1))
+                  }
+                  disabled={boundedCurrentPage >= previewPages.length}
+                  className="px-2 py-1 text-xs rounded-md border border-white/15 text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             )}
           </div>
+          <div className="rounded-lg overflow-hidden border border-white/10">
+            <p className="text-white/50 text-xs font-medium px-2 py-1.5 bg-white/5">
+              {shownPreviewLabel}
+            </p>
+            <div className="relative">
+              <img
+                src={shownPreviewUrl}
+                alt="Detection preview"
+                className="w-full h-auto block"
+              />
+              {showSignatureOverlay &&
+                forgery_regions.map((r, i) => (
+                  <div
+                    key={`${r.source || "region"}-${i}`}
+                    className={`absolute border-2 ${
+                      signatureIsForged
+                        ? "border-red-400 bg-red-400/10"
+                        : "border-emerald-400 bg-emerald-400/10"
+                    }`}
+                    style={{
+                      left: `${(r.x || 0) * 100}%`,
+                      top: `${(r.y || 0) * 100}%`,
+                      width: `${(r.w || 0) * 100}%`,
+                      height: `${(r.h || 0) * 100}%`,
+                    }}
+                    title={`Signature area (${Math.round((r.score || 0) * 100)}%)`}
+                  />
+                ))}
+            </div>
+          </div>
+          {showSignatureOverlay && (
+            <p
+              className={`text-xs mt-2 ${
+                signatureIsForged ? "text-red-300" : "text-emerald-300"
+              }`}
+            >
+              Signature area is highlighted on this preview (
+              {signatureIsForged ? "forged" : "authentic"}).
+            </p>
+          )}
+          {doctamperSkipped && (
+            <p className="text-amber-300 text-xs mt-2">
+              DocTamper was skipped because OCR did not detect text.
+            </p>
+          )}
         </div>
       )}
 
       {/* Blockchain Status */}
       {anchor_status && (
         <div className="mb-4 pt-4 border-t border-white/8">
-          <p className="text-white/40 text-xs uppercase tracking-widest mb-3 font-medium">
-            ⛓️ Blockchain Status
-          </p>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-white/40 text-xs uppercase tracking-widest font-medium">
+              ⛓️ Blockchain Status
+            </p>
+            {onRevoke &&
+              anchor_status === "found_on_chain" &&
+              !chain_revoked && (
+                <button
+                  onClick={onRevoke}
+                  className="px-3 py-1 text-xs font-semibold text-red-400 bg-red-500/15 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors duration-200"
+                >
+                  ⊘ Revoke Document
+                </button>
+              )}
+          </div>
           <ChainStatusBadge
             status={anchor_status}
             issuer={chain_issuer}
@@ -522,6 +682,8 @@ export default function ResultCard({
           />
         </div>
       )}
+
+      <AuditTimeline events={audit_history} />
 
       {/* Hash & Blockchain Data */}
       <div className="pt-4 border-t border-white/8">
