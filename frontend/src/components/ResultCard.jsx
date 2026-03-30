@@ -107,6 +107,34 @@ function RegionOverlay({ previewUrl, forgery_regions }) {
   );
 }
 
+function ChainStatusBadge({ status, issuer, timestamp, revoked }) {
+  const statusConfig = {
+    anchored: { color: 'emerald', label: '✓ Saved', detail: 'Proof recorded' },
+    found_on_chain: { color: 'emerald', label: '✓ Found', detail: 'Hash verified' },
+    not_found_on_chain: { color: 'red', label: '✗ Not Found', detail: 'Not on-chain' },
+    revoked_on_chain: { color: 'red', label: '⊘ Revoked', detail: 'Marked revoked' },
+    anchor_failed: { color: 'amber', label: '⚠ Failed', detail: 'Anchor error' },
+    lookup_failed: { color: 'amber', label: '⚠ Error', detail: 'Lookup failed' },
+  };
+  const cfg = statusConfig[status] || statusConfig.anchor_failed;
+  const colorMap = {
+    emerald: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
+    red: 'text-red-400 bg-red-500/15 border-red-500/30',
+    amber: 'text-amber-400 bg-amber-500/15 border-amber-500/30',
+  };
+  const tsStr = timestamp ? new Date(timestamp * 1000).toLocaleString() : '';
+  return (
+    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border ${colorMap[cfg.color]}`}>
+      <span>{cfg.label}</span>
+      {revoked && <span className="text-xs">🚫</span>}
+      <div className="text-white/40 text-xs ml-1">
+        {tsStr && <span>{tsStr}</span>}
+        {issuer && <span> • {issuer.slice(0, 6)}...</span>}
+      </div>
+    </div>
+  );
+}
+
 export default function ResultCard({
   result,
   confidence,
@@ -115,6 +143,12 @@ export default function ResultCard({
   tx_hash,
   anchor_status,
   anchor_error,
+  chain_exists,
+  chain_revoked,
+  chain_timestamp,
+  chain_issuer,
+  forensic_verdict,
+  forensic_confidence,
   module_scores,
   explanation,
   reasons,
@@ -158,22 +192,40 @@ export default function ResultCard({
       </div>
 
       <div className="flex items-center justify-between mb-2">
-        <span className="text-white/50 text-sm">Overall Confidence</span>
-        <span className="text-white font-bold tabular-nums">{pct}%</span>
+        <span className="text-white/50 text-sm">Forensic Confidence</span>
+        <span className="text-white font-bold tabular-nums">{(forensic_confidence != null ? forensic_confidence * 100 : pct).toFixed(1)}%</span>
       </div>
       <div className="h-2 bg-white/10 rounded-full overflow-hidden mb-5">
         <div
           className={`h-full rounded-full transition-all duration-700 ${cfg.bar}`}
-          style={{ width: `${pct}%` }}
+          style={{ width: `${forensic_confidence != null ? forensic_confidence * 100 : pct}%` }}
         />
       </div>
+
+      {forensic_verdict && (
+        <div className="mb-4 p-3 bg-white/5 border border-white/8 rounded-lg">
+          <p className="text-white/40 text-xs uppercase tracking-widest mb-2">Forensic Verdict</p>
+          <p className="text-sm font-semibold text-fuchsia-300 mb-2">{forensic_verdict}</p>
+          {anchor_status && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-white/40">Chain Status:</span>
+              <ChainStatusBadge 
+                status={anchor_status} 
+                issuer={chain_issuer}
+                timestamp={chain_timestamp}
+                revoked={chain_revoked}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {(explanation ||
         suspected_forgery_type ||
         (reasons && reasons.length > 0)) && (
         <div className="mb-4 pt-4 border-t border-white/8">
           <p className="text-white/40 text-xs uppercase tracking-widest mb-3">
-            Why This Result
+            Analysis Evidence
           </p>
           {suspected_forgery_type && (
             <p className="text-sm text-fuchsia-300 mb-2">

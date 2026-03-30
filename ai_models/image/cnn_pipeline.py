@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Callable
 
+import imagehash
 import numpy as np
 import torch
 from PIL import Image, ImageChops, ImageDraw
@@ -20,6 +21,21 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp
 
 
 Preprocessor = Callable[[bytes], Image.Image]
+
+
+def compute_perceptual_hash(content: bytes) -> str:
+    """
+    Compute perceptual hash (pHash) of image using average hash.
+    Returns 64-character hex string representing visual fingerprint.
+    """
+    try:
+        image = Image.open(io.BytesIO(content)).convert("RGB")
+        # Compute perceptual hash using average method (8x8 basis = 64 bits)
+        phash = imagehash.average_hash(image, hash_size=8)
+        return str(phash)
+    except Exception as exc:
+        logger.error("Perceptual hash computation failed: %s", exc)
+        return "0" * 64
 
 
 def preprocess_ela_image(content: bytes, quality: int = 75) -> Image.Image:

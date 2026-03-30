@@ -14,6 +14,7 @@ from image.ela import run_ela_analysis
 from image.copy_move import run_copy_move_detection
 from image.forgery_type import predict_forgery_type
 from image.localization import localize_forgery_regions
+from image.cnn_pipeline import compute_perceptual_hash
 from text.ocr import extract_text
 from text.nlp_analysis import run_nlp_anomaly_detection
 from fusion.confidence_score import compute_confidence
@@ -96,11 +97,14 @@ def analyze_document(content: bytes, content_type: str) -> dict:
     """Run full AI pipeline and return explainable verdict details."""
     scores: dict[str, float] = {}
     forgery_regions = None
+    perceptual_hash = None
 
     if content_type.startswith("image/"):
+        perceptual_hash = compute_perceptual_hash(content)
         scores["ela"] = run_ela_analysis(content)
         scores["copy_move"] = run_copy_move_detection(content)
         logger.debug("Image scores: %s", scores)
+        logger.debug("Perceptual hash: %s", perceptual_hash)
     elif content_type == "application/pdf":
         extracted_text = extract_text(content)
         scores["nlp"] = run_nlp_anomaly_detection(extracted_text)
@@ -122,7 +126,7 @@ def analyze_document(content: bytes, content_type: str) -> dict:
             f"Subtype classifier suggests '{_humanize_type(subtype_label)}' with confidence {subtype_conf:.2f}."
         )
 
-    return {
+    result = {
         "result": label,
         "confidence": round(confidence, 4),
         "module_scores": {k: round(float(v), 4) for k, v in scores.items()},
@@ -131,3 +135,6 @@ def analyze_document(content: bytes, content_type: str) -> dict:
         "suspected_forgery_type": explanation["suspected_forgery_type"],
         "forgery_regions": forgery_regions,
     }
+    if perceptual_hash:
+        result["perceptual_hash"] = perceptual_hash
+    return result

@@ -6,6 +6,9 @@ contract DocumentVerification {
         address issuer;
         uint256 timestamp;
         bytes32 textHash;
+        bytes32 previousHash;  // Chain of custody: link to prior version
+        string version;        // Version identifier (e.g., "1.0", "2.0")
+        string perceptualHash; // Perceptual (pHash) for visual similarity matching (64 hex chars)
         bool exists;
         bool revoked;
     }
@@ -40,7 +43,30 @@ contract DocumentVerification {
         emit IssuerUpdated(issuer, isAuthorized);
     }
 
-    function issueDocument(bytes32 fileHash, bytes32 textHash) external onlyAuthorizedIssuer {
+    function issueDocument(
+        bytes32 fileHash,
+        bytes32 textHash
+    ) external onlyAuthorizedIssuer {
+        _issueDocumentWithVersion(fileHash, textHash, bytes32(0), "", "");
+    }
+
+    function issueDocumentWithVersion(
+        bytes32 fileHash,
+        bytes32 textHash,
+        bytes32 previousHash,
+        string calldata version,
+        string calldata perceptualHash
+    ) external onlyAuthorizedIssuer {
+        _issueDocumentWithVersion(fileHash, textHash, previousHash, version, perceptualHash);
+    }
+
+    function _issueDocumentWithVersion(
+        bytes32 fileHash,
+        bytes32 textHash,
+        bytes32 previousHash,
+        string memory version,
+        string memory perceptualHash
+    ) internal {
         require(fileHash != bytes32(0), "Invalid file hash");
         require(textHash != bytes32(0), "Invalid text hash");
         require(!documents[fileHash].exists, "Document already issued");
@@ -49,6 +75,9 @@ contract DocumentVerification {
             issuer: msg.sender,
             timestamp: block.timestamp,
             textHash: textHash,
+            previousHash: previousHash,
+            version: version,
+            perceptualHash: perceptualHash,
             exists: true,
             revoked: false
         });
@@ -88,5 +117,32 @@ contract DocumentVerification {
     {
         DocumentRecord memory record = documents[fileHash];
         return (record.issuer, record.timestamp, record.textHash, record.exists, record.revoked);
+    }
+
+    function getDocumentFull(bytes32 fileHash)
+        external
+        view
+        returns (
+            address issuer,
+            uint256 timestamp,
+            bytes32 textHash,
+            bytes32 previousHash,
+            string memory version,
+            string memory perceptualHash,
+            bool exists,
+            bool revoked
+        )
+    {
+        DocumentRecord memory record = documents[fileHash];
+        return (
+            record.issuer,
+            record.timestamp,
+            record.textHash,
+            record.previousHash,
+            record.version,
+            record.perceptualHash,
+            record.exists,
+            record.revoked
+        );
     }
 }

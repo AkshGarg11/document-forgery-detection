@@ -26,6 +26,30 @@ PRIVATE_KEY = os.getenv("DEPLOYER_PRIVATE_KEY", os.getenv("GANACHE_PRIVATE_KEY",
 CHAIN_ID = int(os.getenv("CHAIN_ID", "1337"))
 CONTRACT_ABI_PATH = os.getenv("CONTRACT_ABI_PATH", "")
 
+
+def _hamming_distance(hash1: str, hash2: str) -> int:
+    """Compute Hamming distance between two 64-character hex strings (perceptual hashes)."""
+    if len(hash1) != 64 or len(hash2) != 64:
+        return 64  # Max distance if invalid
+    try:
+        val1 = int(hash1, 16)
+        val2 = int(hash2, 16)
+        xor = val1 ^ val2
+        return bin(xor).count("1")
+    except ValueError:
+        return 64
+
+
+def _similarity_score(hash1: str, hash2: str) -> float:
+    """Compute similarity as percentage (0-100). 100 = identical, 0 = completely different."""
+    distance = _hamming_distance(hash1, hash2)
+    # 64 bits total; 0 distance = 100% similar, 64 distance = 0% similar
+    return max(0.0, (64 - distance) / 64 * 100)
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(_REPO_ROOT / ".env")
+
 _MINIMAL_ABI: list[dict[str, Any]] = [
     {
         "inputs": [
@@ -163,36 +187,66 @@ def _resolve_sender_address(w3: Any) -> str:
     return accounts[0]
 
 
-def issue_document(file_hash_hex: str, text_hash_hex: str | None = None) -> str:
-    """Issue an on-chain document record."""
+def issue_document(
+    file_hash_hex: str,
+    text_hash_hex: str | None = None,
+    previous_hash_hex: str | None = None,
+    version: str | None = None,
+    perceptual_hash_hex: str | None = None,
+) -> str:
+    """Issue an on-chain document record with optional version tracking and perceptual hash."""
     w3, contract = _get_web3_and_contract()
     file_hash = _to_bytes32(file_hash_hex)
     text_hash = _to_bytes32(text_hash_hex or file_hash_hex)
     sender = _resolve_sender_address(w3)
 
-    tx = contract.functions.issueDocument(file_hash, text_hash).build_transaction(
-        {"from": sender, "gas": 300000, "chainId": CHAIN_ID}
-    )
+    # Use versioned endpoint with perceptual hash
+    prev_hash = _to_bytes32(previous_hash_hex) if previous_hash_hex else bytes(32)
+    version_str = version or "1.0"
+    phash_str = perceptual_hash_hex or ""
+    
+    tx = contract.functions.issueDocumentWithVersion(
+        file_hash, text_hash, prev_hash, version_str, phash_str
+    ).build_transaction({"from": sender, "gas": 300000, "chainId": CHAIN_ID})
+
     tx_hash = _send_transaction(w3, tx)
-    logger.info("Document issued. file_hash=%s tx=%s", file_hash_hex, tx_hash)
+    logger.info(
+        "Document issued. file_hash=%s version=%s phash=%s tx=%s",
+        file_hash_hex,
+        version_str,
+        phash_str[:16] if phash_str else "none",
+        tx_hash,
+    )
     return tx_hash
 
 
 def verify_document(file_hash_hex: str) -> dict[str, Any]:
-    """Verify a file hash against on-chain record."""
+    """Verify a file hash against on-chain record with full metadata including perceptual hash."""
     _, contract = _get_web3_and_contract()
     file_hash = _to_bytes32(file_hash_hex)
 
     is_valid, timestamp, issuer, revoked = contract.functions.verifyDocument(file_hash).call()
-    record_issuer, record_ts, text_hash, exists, record_revoked = contract.functions.getDocument(file_hash).call()
+    try:
+        issuer_addr, record_ts, text_hash, previous_hash, version, phash, exists, record_revoked = (
+            contract.functions.getDocumentFull(file_hash).call()
+        )
+    except Exception:
+        record_issuer, record_ts, text_hash, exists, record_revoked = contract.functions.getDocument(file_hash).call()
+        issuer_addr = record_issuer
+        previous_hash = bytes(32)
+        version = ""
+        phash = ""
 
     return {
         "exists": bool(exists),
         "is_valid": bool(is_valid),
         "revoked": bool(revoked or record_revoked),
         "timestamp": int(timestamp if timestamp else record_ts),
-        "issuer": issuer if issuer != "0x0000000000000000000000000000000000000000" else record_issuer,
+        "issuer": issuer_addr if issuer_addr != "0x0000000000000000000000000000000000000000" else issuer,
         "text_hash": _bytes_to_hex(text_hash),
+        "previous_hash": _bytes_to_hex(previous_hash),
+        "version": version or "",
+        "perceptual_hash": phash or "",
     }
 
 
