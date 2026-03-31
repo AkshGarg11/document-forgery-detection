@@ -53,11 +53,21 @@ async def upload_document(
     file: UploadFile = File(...),
     blockchain_action: str = Form("save"),
 ):
-    allowed_types = {"image/jpeg", "image/png", "application/pdf"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/tiff",
+        "image/tif",
+        "application/pdf",
+    }
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported file type '{file.content_type}'. Allowed: JPEG, PNG, PDF.",
+            detail=(
+                f"Unsupported file type '{file.content_type}'. "
+                "Allowed: JPEG, PNG, WEBP, TIFF, PDF."
+            ),
         )
 
     try:

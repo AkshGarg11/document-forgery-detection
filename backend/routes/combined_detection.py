@@ -88,6 +88,32 @@ class CombinedDetectionResponse(BaseModel):
     selected_page_index: int = 1
 
 
+def _to_json_primitive(value: Any) -> Any:
+    """Convert library-specific scalar/container values into JSON-safe primitives."""
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+
+    if isinstance(value, dict):
+        return {str(k): _to_json_primitive(v) for k, v in value.items()}
+
+    if isinstance(value, (list, tuple, set)):
+        return [_to_json_primitive(v) for v in value]
+
+    # Pillow TIFF metadata often uses IFDRational; serialize it as numeric.
+    if hasattr(value, "numerator") and hasattr(value, "denominator"):
+        try:
+            numeric = float(value)
+            return int(numeric) if numeric.is_integer() else numeric
+        except Exception:
+            return str(value)
+
+    try:
+        numeric = float(value)
+        return int(numeric) if numeric.is_integer() else numeric
+    except Exception:
+        return str(value)
+
+
 def _extract_document_metadata(
     image: UploadFile,
     content: bytes,
@@ -125,7 +151,7 @@ def _extract_document_metadata(
                 "mode": "unknown",
             }
         )
-    return metadata
+    return _to_json_primitive(metadata)
 
 
 def _render_pdf_pages(content: bytes, max_pages: int = 20) -> tuple[list[bytes], int]:
@@ -299,9 +325,19 @@ async def combined_detection_predict(
 
     Both run in parallel for efficiency.
     """
-    allowed_types = {"image/jpeg", "image/png", "application/pdf"}
+    allowed_types = {
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/tiff",
+        "image/tif",
+        "application/pdf",
+    }
     if not image.content_type or image.content_type not in allowed_types:
-        raise HTTPException(status_code=415, detail="Only JPEG, PNG, and PDF uploads are supported.")
+        raise HTTPException(
+            status_code=415,
+            detail="Only JPEG, PNG, WEBP, TIFF, and PDF uploads are supported.",
+        )
 
     content = await image.read()
     if not content:
