@@ -31,204 +31,98 @@ docker compose up --build
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
-
-## One-Container Deployment (Hugging Face Space)
-
-This repository includes a root [Dockerfile](Dockerfile) for single-container deployment where frontend + backend + AI run together.
-
-- Frontend is built during Docker build and served by FastAPI.
-- API remains available under `/api/v1/*`.
-- Container uses `PORT=7860` by default for Hugging Face Spaces.
-
-See full setup in [HUGGINGFACE_DEPLOYMENT.md](HUGGINGFACE_DEPLOYMENT.md).
-
-## Ports and Services
-
-When you run `docker compose up`, these containers start:
-
-- Frontend container (`forgeguard-frontend`): host `${FRONTEND_PORT}` -> container `80` (default `3000 -> 80`)
-- Backend container (`forgeguard-backend`): host `${BACKEND_PORT}` -> container `8000` (default `8000 -> 8000`)
-
-Ports defined in `.env.example` for related infrastructure:
-
-- IPFS API: `5001` (from `IPFS_API_URL`)
-
-Important:
-
-- Current `docker-compose.yml` starts backend + frontend only.
-- IPFS is referenced as an endpoint but is not started as a compose service in the current setup.
-- Backend currently supports mocked IPFS flow for local development.
-
-## AI Model Training and Evaluation
-
-Use these commands from project root (`d:\document-forgery-detection`).
-
-### Dataset Layout
-
-Primary dataset expected by the pipeline:
-
-```text
-ai_models/data_forgery_type/
-  train/
-    authentic/
-    copy_move/
-    splicing/
-    removal/
-    object_insertion/
-    ai_generated_text_based/
-  test/
-    authentic/
-    copy_move/
-    splicing/
-    removal/
-    object_insertion/
-    ai_generated_text_based/
-```
-
-### Train (Docker)
-
-Run forgery-type model training (auto-resume from checkpoint):
-
-```bash
-docker compose exec backend python -m ai_models.train_all_models --epochs 12 --batch-size 16
-```
-
-Resume from existing checkpoints automatically:
-
-```bash
-docker compose exec backend python -m ai_models.train_all_models --epochs 12 --batch-size 16
-```
-
-Start fresh by deleting checkpoints first:
-
-```bash
-docker compose exec backend sh -c "rm -f ai_models/models/forgery_type_cnn.pt"
-docker compose exec backend python -m ai_models.train_all_models --epochs 12 --batch-size 16
-```
-
-### Evaluate (Docker)
-
-Evaluate both tasks (binary + forgery type) and write a JSON report:
-
-```bash
-docker compose exec backend python -m ai_models.evaluate_models --data-root ai_models/data_forgery_type --out ai_models/models/evaluation_latest.json
-```
-
-### Train (Local Python)
-
-If you want to run without Docker:
-
-```bash
-python -m ai_models.train_all_models --epochs 12 --batch-size 16
-```
-
-### Evaluate (Local Python)
-
-```bash
-python -m ai_models.evaluate_models --data-root ai_models/data_forgery_type --out ai_models/models/evaluation_latest.json
-```
-
-### Useful Flags
-
-- `--forgery-type-backbone resnet18|efficientnet_b0`: choose CNN backbone.
-- `--forgery-type-data-root <path>`: custom subtype dataset location.
-- `--num-workers <int>`: DataLoader workers.
-- `--lr <float>`: learning rate.
-
-## Stop Services
-
-```bash
-docker compose down
-```
-
-## Full Cleanup (remove all project docker data)
-
-```bash
-docker compose down --rmi all --volumes --remove-orphans
-```
-
-This removes containers, images, networks, and volumes created by this project.
-
-## Notes
-
-- Backend image installs both backend and AI dependencies.
-- Frontend uses multi-stage Docker build (Node build + Nginx runtime).
-- Healthcheck is enabled for backend and frontend depends on backend health.
-
-## Blockchain Workflow (Ganache App + Hardhat + Backend)
-
-This repository now includes a blockchain module in [blockchain](blockchain) and backend integration for:
-
-- Issue (anchor) document hash on-chain during upload
-- Verify hash via API
-- Revoke hash via API
-
-### 1) Start Ganache App
-
-1. Open Ganache App.
-2. Start a local workspace.
-3. Ensure RPC URL is available (default is usually `http://127.0.0.1:7545`).
-4. Ensure `Chain ID` is `5777` in Ganache settings.
-
-### 2) Compile and test contract
-
-From [blockchain](blockchain):
-
-```bash
-npm install
-npm test
-```
-
-### 3) Deploy contract
-
-Deployment via `hardhat viem` may require wallet methods not exposed by some Ganache App configurations.
-Use this reliable Web3 deployment from repo root:
-
-```bash
-python blockchain/scripts/deploy_with_web3.py
-```
-
-Copy the printed contract address.
-
-### 4) Configure environment
-
-Set these in [.env](.env):
-
-- `BLOCKCHAIN_ENABLED=true`
-- `GANACHE_RPC_URL=http://127.0.0.1:7545`
-- `WEB3_PROVIDER_URI=http://127.0.0.1:7545`
-- `CHAIN_ID=5777`
-- `CONTRACT_ADDRESS=<deployed_address>`
-
-`DEPLOYER_PRIVATE_KEY` is optional for Ganache App if unlocked accounts are available.
-
-### 5) Backend API behavior
-
-- Upload endpoint [backend/routes/upload.py](backend/routes/upload.py):
-  - computes file hash
-  - runs AI pipeline
-  - uploads to IPFS mock
-  - attempts on-chain issue and returns:
-    - `tx_hash`
-    - `anchor_status`
-    - `anchor_error` (only on failure)
-
-- Verify endpoint [backend/routes/verify.py](backend/routes/verify.py):
-  - `POST /api/v1/verify`
-  - body: `{ "file_hash": "<64 hex>" }`
-
-- Revoke endpoint [backend/routes/revoke.py](backend/routes/revoke.py):
-  - `POST /api/v1/revoke`
-  - body: `{ "file_hash": "<64 hex>" }`
-
-### 6) Frontend behavior
-
-[frontend/src/components/ResultCard.jsx](frontend/src/components/ResultCard.jsx) now shows:
-
-- document hash
-- IPFS CID
-- anchor status
-- blockchain transaction hash
-- anchor error (if any)
-
-For cloud/demo deployments, use public testnet (Sepolia) with RPC provider and keep keys in host secrets. Reference: [HUGGINGFACE_DEPLOYMENT.md](HUGGINGFACE_DEPLOYMENT.md).
+- Blockchain Node: http://localhost:8545
+
+## Local Development without Docker
+
+### Backend
+
+1.  **Navigate to the backend directory:**
+    ```bash
+    cd backend
+    ```
+2.  **Create a virtual environment:**
+    ```bash
+    python -m venv venv
+    ```
+3.  **Activate the virtual environment:**
+    - On Windows:
+      ```bash
+      .\venv\Scripts\activate
+      ```
+    - On macOS/Linux:
+      ```bash
+      source venv/bin/activate
+      ```
+4.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+5.  **Run the backend server:**
+    ```bash
+    uvicorn main:app --reload
+    ```
+
+### Frontend
+
+1.  **Navigate to the frontend directory:**
+    ```bash
+    cd frontend
+    ```
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+3.  **Run the frontend server:**
+    ```bash
+    npm run dev
+    ```
+
+### Blockchain
+
+1.  **Navigate to the blockchain directory:**
+    ```bash
+    cd blockchain
+    ```
+2.  **Install dependencies:**
+    ```bash
+    npm install
+    ```
+3.  **Run the local blockchain node:**
+    ```bash
+    npx hardhat node
+    ```
+4.  **Deploy the smart contract (in a separate terminal):**
+    ```bash
+    npx hardhat run scripts/deploy-document.ts --network localhost
+    ```
+
+## AI Models
+
+The backend utilizes several AI models for forgery detection. Here's a more detailed overview of the models and their architectures.
+
+### 1. Copy-Move Forgery Detector
+
+- **Implementation:** `ai_models/copy_move_detector/forgery_detection/pipeline.py`
+- **Usage:** `backend/services/copy_move_service.py`
+- **Base Model:** The architecture is based on **ResNet34**.
+- **Customization:** The standard ResNet34 model is modified to accept a **6-channel input** instead of the usual 3. These channels consist of the original RGB image data plus 3 channels from an Error Level Analysis (ELA) of the image. The model was trained from scratch on the forgery dataset, not using pre-trained ImageNet weights.
+- **Training:** It's trained to classify images as either authentic or forged by learning from the combined RGB and ELA data.
+
+### 2. Doctamper
+
+- **Implementation:** `ai_models/doctamper/forgery_detection/pipeline.py`
+- **Usage:** `backend/services/doctamper_service.py`
+- **Base Model:** This model uses a **U-Net architecture** with an **EfficientNet-B0** encoder, implemented using the `segmentation-models-pytorch` library.
+- **Customization:** The model has two outputs: a segmentation mask to localize tampered regions and a classification output to determine if the document is tampered with at all. The EfficientNet-B0 encoder was not initialized with pre-trained weights.
+- **Training:** It is trained on a dataset of tampered and authentic documents to learn how to both classify and localize forgeries.
+
+### 3. Signature Verification
+
+- **Implementation:** `ai_models/ai_detector/signature_verification/pipeline.py`
+- **Usage:** `backend/services/signature_verification_service.py`
+- **Base Model:** This system uses two models:
+  1.  A **YOLO (You Only Look Once)** model to first detect the location of the signature within the document.
+  2.  A **ResNet18** model to perform the actual verification on the cropped signature image.
+- **Customization:** The ResNet18 model has a custom classification head designed to output a single value indicating whether the signature is genuine or forged.
+- **Training:** The ResNet18 model is trained on a dataset of genuine and forged signatures to learn the subtle features that differentiate them.

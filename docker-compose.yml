@@ -1,6 +1,15 @@
 version: "3.9"
 
 services:
+  blockchain:
+    build:
+      context: .
+      dockerfile: blockchain/Dockerfile
+    container_name: forgeguard-blockchain
+    ports:
+      - "${BLOCKCHAIN_PORT:-8545}:8545"
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -10,6 +19,8 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     restart: unless-stopped
+    depends_on:
+      - blockchain
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
