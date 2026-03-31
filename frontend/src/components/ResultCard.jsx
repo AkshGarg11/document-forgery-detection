@@ -656,24 +656,50 @@ export default function ResultCard({
         </div>
       )}
 
-      {/* Blockchain Status */}
+      {/* Blockchain & Protocol Controls */}
       {anchor_status && (
         <div className="mb-4 pt-4 border-t border-white/8">
           <div className="flex items-center justify-between mb-3">
             <p className="text-white/40 text-xs uppercase tracking-widest font-medium">
-              ⛓️ Blockchain Status
+              ⛓️ Blockchain & Integrity Status
             </p>
-            {onRevoke &&
-              anchor_status === "found_on_chain" &&
-              !chain_revoked && (
+            <div className="flex gap-2">
+              {/* Anchor to Blockchain button - shown when NOT on-chain */}
+              {anchor_status === "not_found_on_chain" && onRevoke && (
                 <button
                   onClick={onRevoke}
-                  className="px-3 py-1 text-xs font-semibold text-red-400 bg-red-500/15 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors duration-200"
+                  className="px-3 py-1.5 text-xs font-semibold text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/25 transition-colors duration-200"
                 >
-                  ⊘ Revoke Document
+                  ⬆ Anchor to Blockchain
                 </button>
               )}
+              {/* Revoke Document button - shown when already on-chain */}
+              {anchor_status === "found_on_chain" &&
+                !chain_revoked &&
+                onRevoke && (
+                  <button
+                    onClick={onRevoke}
+                    className="px-3 py-1.5 text-xs font-semibold text-red-400 bg-red-500/15 border border-red-500/30 rounded-lg hover:bg-red-500/25 transition-colors duration-200"
+                  >
+                    ⊘ Revoke Document Proof
+                  </button>
+                )}
+            </div>
           </div>
+
+          {/* Document Suspended warning - shown when revoked */}
+          {chain_revoked && (
+            <div className="mb-3 p-3 rounded-lg border border-red-500/50 bg-red-500/10">
+              <p className="text-red-400 text-xs font-semibold flex items-center gap-2">
+                <span>🚫</span> Document Suspended
+              </p>
+              <p className="text-red-300/70 text-xs mt-1">
+                The cryptographic proof for this document has been revoked
+                on-chain, indicating detected tampering or forgery.
+              </p>
+            </div>
+          )}
+
           <ChainStatusBadge
             status={anchor_status}
             issuer={chain_issuer}
